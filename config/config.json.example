@@ -1,0 +1,29 @@
+{
+  "gemini": {
+    "api_key": "your_actual_gemini_api_key_here",
+    "model": "gemini-2.0-flash-exp"
+  },
+  "mcp_servers": [
+    {
+      "name": "My Jira Server",
+      "url": "http://localhost:8080",
+      "enabled": false
+    },
+    {
+      "name": "My Brew Server",
+      "url": "http://localhost:8050",
+      "enabled": true
+    },
+    {
+      "name": "Custom MCP Server",
+      "url": "http://localhost:9000",
+      "endpoint": "/sse",
+      "timeout": 60,
+      "enabled": false,
+      "description": "Custom MCP server for specific integrations"
+    }
+  ],
+  "logging": {
+    "level": "DEBUG"
+  }
+}
