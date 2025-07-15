@@ -75,49 +75,36 @@ You can override certain configuration values using environment variables:
 - `MCP_SERVER_NAME` - Override MCP server name
 - `MCP_SERVER_ENDPOINT` - Override MCP server endpoint
 
-## Configuration Loading
+## Configuration Options
 
-The configuration system works as follows:
+### Gemini Settings
+- `api_key`: Your Gemini AI API key (required)
+- `model`: Gemini model to use (default: "gemini-2.0-flash-exp")
+- `temperature`: Controls randomness (0.0-1.0, default: 0.1)
+- `timeout`: Request timeout in seconds (default: 30)
 
-1. **Main Configuration**: Loaded from `config.json`
-2. **Environment Overrides**: Applied from environment variables
-3. **Final Configuration**: Result used by the application
+### MCP Server Settings
+- `name`: Display name for the server
+- `url`: Server URL including protocol and port
+- `endpoint`: SSE endpoint (default: "/sse")
+- `timeout`: Connection timeout (default: 30)
+- `max_retries`: Maximum retry attempts (default: 3)
+- `enabled`: Whether to connect to this server (default: true)
+- `description`: Optional description of the server
 
-Environment variables override the JSON configuration settings.
+### Logging Settings
+- `level`: Log level (DEBUG, INFO, WARNING, ERROR)
+- `file`: Log file path (default: "logs/pipeline_bot.log")
+- `max_log_lines`: Maximum lines to show when displaying logs (default: 1000)
 
-## Troubleshooting
+### UI Settings
+- `show_banner`: Show startup banner (default: true)
+- `show_tool_preview`: Show available tools on startup (default: true)
+- `max_tools_preview`: Maximum tools to preview (default: 5)
 
-### "Gemini API key is required" Error
-- Make sure you've set your API key in `config.json`
-- Or set the `GEMINI_API_KEY` environment variable
+## Security Notes
 
-### "No MCP servers connected" Error
-- Check that your MCP servers are running
-- Verify the URLs and ports in your configuration
-- Make sure at least one server has `"enabled": true`
-
-### "Configuration file not found" Error
-- Make sure `config/config.json` exists
-- Copy `config/config.json.example` to `config/config.json`
-- Check that you're running the command from the correct directory
-
-## Adding New MCP Servers
-
-To add a new MCP server:
-
-1. Add a new entry to the `mcp_servers` array in your `config.json`:
-   ```json
-   {
-     "name": "My Custom Server",
-     "url": "http://localhost:9000",
-     "endpoint": "/sse",
-     "timeout": 30,
-     "max_retries": 3,
-     "enabled": true,
-     "description": "Custom MCP server for specific tasks"
-   }
-   ```
-
-2. Restart the Pipeline Bot
-
-The system will automatically discover and use tools from all enabled servers.
+- Never commit your actual API keys to version control
+- Use environment variables for sensitive configuration in production
+- Keep your `config.json` file secure and don't share it publicly
+- The example file shows the structure but uses placeholder values
