@@ -26,7 +26,9 @@ Example configuration file showing how to customize your settings.
    Replace `"your_gemini_api_key_here"` with your actual Gemini API key.
 
 4. **Configure your MCP servers:**
-   - Update server URLs and ports as needed
+   - Choose connection type: `"http"` for remote servers or `"stdio"` for local processes
+   - For HTTP servers: Update server URLs and ports as needed
+   - For stdio servers: Configure command, args, and working directory
    - Enable/disable servers by setting `"enabled": true/false`
    - Add new servers by adding entries to the `mcp_servers` array
 
@@ -42,13 +44,28 @@ Example configuration file showing how to customize your settings.
   },
   "mcp_servers": [
     {
-      "name": "Server Name",
+      "name": "HTTP MCP Server",
+      "connection_type": "http",
       "url": "http://localhost:8080",
       "endpoint": "/sse",
       "timeout": 30,
       "max_retries": 3,
       "enabled": true,
-      "description": "Description of what this server does"
+      "description": "HTTP-based MCP server"
+    },
+    {
+      "name": "Local Filesystem MCP",
+      "connection_type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/files"],
+      "working_directory": "/home/user",
+      "environment": {
+        "ENV_VAR": "value"
+      },
+      "timeout": 30,
+      "max_retries": 3,
+      "enabled": true,
+      "description": "Local filesystem MCP server via stdio"
     }
   ],
   "logging": {
@@ -84,13 +101,29 @@ You can override certain configuration values using environment variables:
 - `timeout`: Request timeout in seconds (default: 30)
 
 ### MCP Server Settings
+
+#### Common Settings (both HTTP and stdio)
 - `name`: Display name for the server
-- `url`: Server URL including protocol and port
-- `endpoint`: SSE endpoint (default: "/sse")
-- `timeout`: Connection timeout (default: 30)
+- `connection_type`: Connection type - "http" or "stdio" (default: "http")
+- `timeout`: Connection timeout in seconds (default: 30)
 - `max_retries`: Maximum retry attempts (default: 3)
 - `enabled`: Whether to connect to this server (default: true)
 - `description`: Optional description of the server
+
+#### HTTP Connection Settings
+- `url`: Server URL including protocol and port (required for HTTP)
+- `endpoint`: SSE endpoint path (default: "/sse")
+
+#### Stdio Connection Settings
+- `command`: Command to execute (required for stdio, e.g., "npx", "python")
+- `args`: Array of command arguments (optional, e.g., ["-y", "@modelcontextprotocol/server-filesystem"])
+- `working_directory`: Directory to run the command from (optional)
+- `environment`: Dictionary of environment variables to set (optional)
+
+#### Example Stdio Configurations
+- **Filesystem**: `"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"]`
+- **Git**: `"command": "python", "args": ["-m", "mcp_git"]`
+- **SQLite**: `"command": "npx", "args": ["-y", "@modelcontextprotocol/server-sqlite", "/path/to/db.sqlite"]`
 
 ### Logging Settings
 - `level`: Log level (DEBUG, INFO, WARNING, ERROR)

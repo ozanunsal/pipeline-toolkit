@@ -1,43 +1,70 @@
-# Pipeline Toolkit
+# Pipeline Toolkit - Enhanced Interactive MCP Client
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Status](https://img.shields.io/badge/Status-Alpha-orange)
+![Status](https://img.shields.io/badge/Status-Beta-blue)
+![Version](https://img.shields.io/badge/Version-0.2.0-brightgreen)
 
-**Pipeline Toolkit** is an AI-powered MCP (Model Context Protocol) client that uses Google's Gemini AI to intelligently select and execute tools from any MCP server based on natural language queries.
+**Pipeline Toolkit** is an advanced, AI-powered MCP (Model Context Protocol) client featuring an interactive CLI, intelligent tool orchestration, and comprehensive conversation management using Google's Gemini AI.
 
-## 🚀 Features
+## 🚀 Enhanced Features
 
-- **🧠 AI-Powered Tool Selection**: Uses Gemini AI to intelligently understand queries and select appropriate tools
-- **🔗 Universal MCP Client**: Works with any MCP server that implements the standard protocol
-- **📝 Natural Language Interface**: Ask questions in plain English and get intelligent responses
-- **🛠️ Dynamic Tool Discovery**: Automatically discovers and adapts to available tools from connected MCP servers
-- **📊 Comprehensive Logging**: File-based logging with on-demand log viewing
-- **⚡ Async Architecture**: Built with modern async/await patterns for optimal performance
-- **🎯 Professional CLI**: Beautiful, user-friendly command-line interface
+### 🧠 Advanced AI Capabilities
+- **Intelligent Tool Selection**: Uses Gemini AI with enhanced dynamic analysis for smart tool selection
+- **Conversation Management**: Persistent conversation history with context-aware responses
+- **Adaptive Learning**: Learns from usage patterns to improve tool recommendations
+- **Multi-step Planning**: Advanced execution planning for complex queries
 
-## 🏗️ Architecture
+### 💻 Interactive CLI Experience
+- **Rich UI Components**: Beautiful, colorful interface with progress bars and tables
+- **Command History**: Persistent command history with auto-suggestions
+- **Tab Completion**: Smart auto-completion for commands and parameters
+- **Real-time Feedback**: Live status updates and performance metrics
 
+### 🔗 Robust MCP Integration
+- **Multi-Server Support**: Connect to multiple MCP servers simultaneously
+- **Dual Connection Types**: Support for both HTTP and stdio (local process) connections
+- **Health Monitoring**: Automatic health checks and connection recovery
+- **Performance Tracking**: Detailed metrics and performance analytics
+- **Circuit Breaker**: Intelligent failover and retry mechanisms
+
+### 🛡️ Enterprise-Grade Features
+- **Enhanced Security**: Comprehensive validation and secure credential handling
+- **Configurable Logging**: Structured logging with multiple output formats
+- **Error Handling**: Detailed exception handling with user-friendly messages
+- **Performance Monitoring**: Real-time performance metrics and optimization
+
+## 🏗️ Enhanced Architecture
+
+```mermaid
+graph TB
+    User[User] --> CLI[Interactive CLI]
+    CLI --> Agent[Enhanced AI Agent]
+    Agent --> Analyzer[Dynamic Tool Analyzer]
+    Agent --> Context[Conversation Context]
+    Agent --> Gemini[Gemini AI]
+
+    Agent --> Client1[MCP Client 1]
+    Agent --> Client2[MCP Client 2]
+    Agent --> ClientN[MCP Client N]
+
+    Client1 --> Server1[MCP Server 1]
+    Client2 --> Server2[MCP Server 2]
+    ClientN --> ServerN[MCP Server N]
+
+    CLI --> Config[Enhanced Config]
+    CLI --> Logging[Advanced Logging]
+    CLI --> Metrics[Performance Metrics]
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   User Query    │───▶│   AI Agent      │───▶│   MCP Client    │
-│ Natural Language│    │ (Gemini AI)     │    │ (MCP Protocol)  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                ▲                       ▲
-                                │                       │
-                                ▼                       ▼
-                       ┌─────────────────┐    ┌─────────────────┐
-                       │ Tool Selection  │    │   MCP Server    │
-                       │ & Execution     │    │ (e.g., BrewMCP) │
-                       └─────────────────┘    └─────────────────┘
-```
 
-The Pipeline Toolkit acts as an intelligent bridge between users and MCP servers:
+### Key Components
 
-1. **User Input**: Natural language queries from users
-2. **AI Processing**: Gemini AI analyzes the query and selects appropriate tools
-3. **Tool Execution**: Selected tools are executed on the target MCP server
-4. **Response Generation**: Results are formatted and returned to the user
+1. **Interactive CLI**: Rich terminal interface with advanced features
+2. **Enhanced AI Agent**: Intelligent conversation and tool management
+3. **Advanced MCP Clients**: Robust connection management with health monitoring
+4. **Dynamic Tool Analyzer**: Smart tool categorization and selection
+5. **Configuration System**: Comprehensive configuration with validation
+6. **Exception Handling**: Detailed error management and user feedback
 
 ## 📦 Installation
 
@@ -45,7 +72,7 @@ The Pipeline Toolkit acts as an intelligent bridge between users and MCP servers
 
 - Python 3.11 or higher
 - Google Gemini API key
-- Running MCP server (e.g., BrewMCP, JiraMCP, etc.)
+- Running MCP server(s)
 
 ### Method 1: Using pip (Recommended)
 
@@ -56,81 +83,272 @@ pip install pipeline-toolkit
 ### Method 2: From Source
 
 ```bash
-git clone https://github.com/your-org/pipeline-toolkit.git
+git clone https://github.com/pipeline-toolkit/pipeline-toolkit.git
 cd pipeline-toolkit
 pip install -e .
 ```
 
+### Method 3: Development Installation
+
+```bash
+git clone https://github.com/pipeline-toolkit/pipeline-toolkit.git
+cd pipeline-toolkit
+pip install -e ".[dev,full]"
+```
+
 ## 🔧 Configuration
 
-### Environment Variables
+### Quick Start Configuration
 
-Create a `.env` file in your project root:
+1. **Generate example configuration:**
+   ```bash
+   pipeline-toolkit --help
+   ```
+
+2. **Create your configuration:**
+   ```bash
+   cp config/config.json.example config/config.json
+   ```
+
+3. **Edit configuration:**
+   ```json
+   {
+     "gemini": {
+       "api_key": "your_gemini_api_key_here",
+       "model": "gemini-2.0-flash-exp",
+       "temperature": 0.1
+     },
+     "mcp_servers": [
+       {
+         "name": "HTTP MCP Server",
+         "connection_type": "http",
+         "url": "http://localhost:8080",
+         "enabled": true
+       },
+       {
+         "name": "Local Filesystem MCP",
+         "connection_type": "stdio",
+         "command": "npx",
+         "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/files"],
+         "enabled": true
+       }
+     ]
+   }
+   ```
+
+### Environment Variables
 
 ```env
 # Required
 GEMINI_API_KEY=your_gemini_api_key_here
 
-# Optional (with defaults)
-GEMINI_MODEL=gemini-2.0-flash-exp
-MCP_SERVER_URL=http://localhost:8080
-MCP_SERVER_NAME=My MCP Server
-MCP_SERVER_ENDPOINT=/sse
-LOG_LEVEL=INFO
+# Optional
+PIPELINE_TOOLKIT_LOG_LEVEL=INFO
+PIPELINE_TOOLKIT_MCP_SERVER_URL=http://localhost:8080
+PIPELINE_TOOLKIT_MCP_SERVER_NAME=Default Server
 ```
 
-### Configuration File
+### Connection Types
 
-Generate a sample configuration:
+Pipeline Toolkit supports two types of MCP server connections:
 
-```bash
-python -m src.config
+#### HTTP Connections
+For MCP servers running as HTTP services:
+```json
+{
+  "name": "HTTP MCP Server",
+  "connection_type": "http",
+  "url": "http://localhost:8080",
+  "endpoint": "/sse",
+  "enabled": true
+}
 ```
 
-This creates a `.env.example` file that you can customize.
+#### Stdio Connections
+For locally running MCP servers that communicate via stdin/stdout:
+```json
+{
+  "name": "Local Filesystem MCP",
+  "connection_type": "stdio",
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/files"],
+  "working_directory": "/home/user",
+  "environment": {
+    "ENV_VAR": "value"
+  },
+  "enabled": true
+}
+```
+
+**Common stdio MCP servers:**
+- **Filesystem**: `npx -y @modelcontextprotocol/server-filesystem /path/to/files`
+- **Git**: `python -m mcp_git` (in git repository)
+- **SQLite**: `npx -y @modelcontextprotocol/server-sqlite /path/to/db.sqlite`
+- **Brave Search**: `npx -y @modelcontextprotocol/server-brave-search`
+- **Postgres**: `npx -y @modelcontextprotocol/server-postgres postgresql://user:pass@host/db`
+
+### Advanced Configuration Options
+
+```json
+{
+  "gemini": {
+    "api_key": "your_key",
+    "model": "gemini-2.0-flash-exp",
+    "temperature": 0.1,
+    "max_tokens": 4096,
+    "timeout": 30
+  },
+  "mcp_servers": [
+    {
+      "name": "HTTP MCP Server",
+      "connection_type": "http",
+      "url": "http://localhost:8080",
+      "endpoint": "/sse",
+      "timeout": 30,
+      "max_retries": 3,
+      "enabled": true,
+      "health_check_interval": 30,
+      "description": "HTTP-based MCP server"
+    },
+    {
+      "name": "Local Filesystem MCP",
+      "connection_type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/documents"],
+      "working_directory": "/home/user",
+      "timeout": 30,
+      "max_retries": 3,
+      "enabled": true,
+      "description": "Local filesystem access via stdio"
+    },
+    {
+      "name": "Git MCP Server",
+      "connection_type": "stdio",
+      "command": "python",
+      "args": ["-m", "mcp_git"],
+      "working_directory": "/path/to/git/repo",
+      "environment": {
+        "GIT_CONFIG_GLOBAL": "/home/user/.gitconfig"
+      },
+      "enabled": false,
+      "description": "Git operations MCP server"
+    }
+  ],
+  "logging": {
+    "level": "INFO",
+    "file": "logs/pipeline_toolkit.log",
+    "max_file_size": 10485760,
+    "backup_count": 5,
+    "enable_console": false
+  },
+  "ui": {
+    "show_banner": true,
+    "show_tool_preview": true,
+    "theme": "default",
+    "show_progress_bars": true,
+    "prompt_style": "fancy"
+  },
+  "security": {
+    "enable_api_key_validation": true,
+    "mask_sensitive_logs": true,
+    "allow_insecure_connections": false
+  },
+  "performance": {
+    "max_concurrent_requests": 10,
+    "connection_pool_size": 5,
+    "enable_caching": true,
+    "cache_ttl": 300
+  }
+}
+```
 
 ## 🚀 Usage
 
 ### Interactive Mode
 
-Start the interactive CLI:
+Start the enhanced interactive CLI:
 
 ```bash
-pipeline-bot
+pipeline-toolkit
+# or
+ptk
 ```
 
-Or if installed from source:
+### Single Query Mode
+
+Execute a single query and exit:
 
 ```bash
-python src/cli.py
+pipeline-toolkit --query "Get tag info for release-1.0"
+ptk -q "List all available tools"
 ```
 
-### Command Line Mode
-
-Execute a single query:
+### Advanced CLI Options
 
 ```bash
-pipeline-bot --query "Get tag info for release-1.0"
+pipeline-toolkit --help
+ptk --config custom-config.json --debug --query "your query"
 ```
 
-### Example Queries
+## 🎯 Interactive Commands
 
-Once connected to an MCP server, you can ask natural language questions:
+Once in interactive mode, you have access to enhanced commands:
 
-```bash
-🔍 Enter your query: Get tag info for release-1.0
-🔍 Enter your query: List all builds in the main-branch tag
-🔍 Enter your query: Show me packages containing 'kernel'
-🔍 Enter your query: What is the latest version of package-name?
+### Basic Commands
+- `help` - Show comprehensive help
+- `list servers` - Show connected MCP servers with status
+- `list tools` - Display all available tools grouped by server
+- `stats` - Show detailed AI agent and performance statistics
+- `config` - Display current configuration
+- `logs [lines]` - Show recent log entries (default: 50 lines)
+
+### Advanced Commands
+- `show <query>` - Process query with AI agent
+- `describe <tool>` - Get detailed information about a specific tool
+- `connect` - Reconnect to all MCP servers
+- `reload` - Reload configuration without restarting
+- `clear` - Clear screen and refresh status
+
+### Natural Language Queries
+Simply type your questions naturally:
+
+```
+🤖 pipeline-toolkit > Get the latest build information
+🤖 pipeline-toolkit > Show me packages containing 'kernel'
+🤖 pipeline-toolkit > What tools are available for package management?
+🤖 pipeline-toolkit > List all tags in the main branch
 ```
 
-### Special Commands
+## ✨ Advanced Features
 
-- `help` - Show available commands
-- `tools` - List all available tools from connected MCP servers
-- `stats` - Show agent statistics
-- `show me the logs` - View recent log entries
-- `exit` or `quit` - Exit the application
+### Conversation Management
+
+The toolkit maintains conversation context across queries:
+
+```python
+# Conversations are automatically managed per user/session
+# Previous context influences future responses
+# Tool usage patterns are learned and optimized
+```
+
+### Performance Monitoring
+
+Real-time performance metrics are available:
+
+- Connection health status
+- Tool execution times
+- Success rates
+- Usage patterns
+- Resource utilization
+
+### Multi-Server Management
+
+Intelligent management of multiple MCP servers:
+
+- Automatic failover and recovery
+- Load balancing across servers
+- Health monitoring and alerting
+- Performance optimization
 
 ## 🛠️ Development
 
@@ -139,38 +357,42 @@ Once connected to an MCP server, you can ask natural language questions:
 ```
 pipeline-toolkit/
 ├── src/
-│   ├── __init__.py          # Package initialization
-│   ├── ai_agent.py          # Gemini AI integration
-│   ├── mcp_client.py        # MCP protocol client
-│   ├── cli.py               # Command-line interface
-│   ├── config.py            # Configuration management
-│   └── exceptions.py        # Custom exceptions
-├── config/                  # Configuration files
-│   ├── config.json          # Main configuration
+│   ├── cli.py               # Enhanced interactive CLI
+│   ├── ai_agent.py          # Advanced AI agent with conversation management
+│   ├── mcp_client.py        # Robust MCP client with health monitoring
+│   ├── config.py            # Comprehensive configuration management
+│   ├── exceptions.py        # Enhanced exception handling
+│   └── dynamic_tool_analyzer.py  # Smart tool analysis
+├── config/
 │   ├── config.json.example  # Example configuration
 │   └── README.md           # Configuration guide
-├── logs/                    # Log files
-├── pyproject.toml          # Project configuration
-├── requirements.txt        # Dependencies
-└── README.md               # This file
+├── examples/               # Usage examples
+├── tests/                  # Comprehensive test suite
+└── docs/                   # Documentation
 ```
 
 ### Setting Up Development Environment
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/pipeline-toolkit.git
+# Clone and setup
+git clone https://github.com/pipeline-toolkit/pipeline-toolkit.git
 cd pipeline-toolkit
 
 # Create virtual environment
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Install in development mode
-pip install -e ".[dev]"
+# Install in development mode with all extras
+pip install -e ".[dev,full]"
+
+# Setup pre-commit hooks
+pre-commit install
 
 # Run tests
 pytest
+
+# Run with coverage
+pytest --cov=src
 
 # Format code
 black src/
@@ -180,121 +402,166 @@ isort src/
 mypy src/
 ```
 
-### Adding New Features
+### Testing
 
-1. **New MCP Servers**: The toolkit automatically adapts to any MCP server
-2. **Custom Tools**: Add new tools by implementing them in your MCP server
-3. **AI Models**: Modify `src/ai_agent.py` to use different AI models
-4. **Extensions**: Use the modular architecture to add new functionality
+```bash
+# Run all tests
+pytest
+
+# Run specific test categories
+pytest -m unit           # Unit tests only
+pytest -m integration    # Integration tests only
+pytest -m "not slow"     # Exclude slow tests
+
+# Run with coverage
+pytest --cov=src --cov-report=html
+```
 
 ## 📚 API Reference
 
-### AIAgent Class
+### Enhanced AI Agent
 
 ```python
-from src import AIAgent
+from src.ai_agent import EnhancedAIAgent
 
-agent = AIAgent(model="gemini-2.0-flash-exp")
-result = await agent.process_query("Your query here")
+agent = EnhancedAIAgent(
+    model="gemini-2.0-flash-exp",
+    enable_conversation_history=True,
+    enable_adaptive_learning=True
+)
+
+# Process query with user context
+result = await agent.process_query(
+    "Your query here",
+    user_id="user123",
+    conversation_id="session456"
+)
+
+# Get conversation summary
+summary = agent.get_conversation_summary("user123", "session456")
+
+# Clear conversation history
+agent.clear_conversation_history("user123", "session456")
 ```
 
-### MCPClient Class
+### Advanced MCP Client
 
 ```python
-from src import MCPClient, MCPServerConfig
+from src.mcp_client import MCPClient
+from src.config import MCPServerConfig
 
 config = MCPServerConfig(
     name="My Server",
-    url="http://localhost:8080"
+    url="http://localhost:8080",
+    health_check_interval=30,
+    connection_timeout=10
 )
 
 async with MCPClient(config) as client:
-    tools = await client.list_tools()
+    # Wait for healthy connection
+    is_healthy = await client.wait_for_healthy(timeout=30)
+
+    # Get comprehensive server info
+    info = client.get_server_info()
+
+    # Get performance metrics
+    metrics = client.get_metrics()
+
+    # Execute tools
     result = await client.call_tool("tool_name", param="value")
 ```
 
-## 🔍 How It Works
+## 🔍 Advanced Usage Examples
 
-### Tool Discovery
+### Multi-Server Setup
 
-1. **Connection**: Pipeline Toolkit connects to your MCP server
-2. **Discovery**: Automatically discovers available tools and their schemas
-3. **Conversion**: Converts MCP tool schemas to Gemini AI function declarations
-4. **Registration**: Registers tools with the AI agent for intelligent selection
-
-### Query Processing
-
-1. **Input**: User provides natural language query
-2. **Analysis**: Gemini AI analyzes the query and intent
-3. **Selection**: AI selects appropriate tools based on query content
-4. **Execution**: Selected tools are executed with extracted parameters
-5. **Response**: Results are formatted and returned to user
-
-### Parameter Extraction
-
-The AI agent intelligently extracts parameters from natural language:
-
-- **"Get tag info for release-1.0"** → `get_brew_tag_info(tag_name="release-1.0")`
-- **"List builds in main-branch"** → `list_brew_builds(tag_name="main-branch")`
-- **"Show package with ID 123"** → `get_package_info(package_id=123)`
-
-## 🧪 Testing
-
-### Unit Tests
-
-```bash
-pytest tests/
+```json
+{
+  "mcp_servers": [
+    {
+      "name": "Brew Server",
+      "url": "http://localhost:8080",
+      "description": "Brew package management",
+      "enabled": true
+    },
+    {
+      "name": "JIRA Server",
+      "url": "http://localhost:8090",
+      "description": "JIRA project management",
+      "enabled": true
+    },
+    {
+      "name": "Custom Tools",
+      "url": "http://localhost:9000",
+      "description": "Custom business tools",
+      "enabled": false
+    }
+  ]
+}
 ```
 
-### Integration Tests
+### Performance Optimization
 
-```bash
-pytest tests/integration/
+```json
+{
+  "performance": {
+    "max_concurrent_requests": 20,
+    "connection_pool_size": 10,
+    "enable_caching": true,
+    "cache_ttl": 600,
+    "retry_backoff_factor": 2.0
+  }
+}
 ```
 
-### Manual Testing
+### Security Configuration
 
-1. Start an MCP server (e.g., BrewMCP)
-2. Set your environment variables
-3. Run the Pipeline Toolkit
-4. Test various queries
-
-## 📊 Logging
-
-All operations are logged to `logs/pipeline_bot.log` by default. View logs:
-
-```bash
-# In interactive mode
-🔍 Enter your query: show me the logs
-
-# Or directly
-tail -f logs/pipeline_bot.log
+```json
+{
+  "security": {
+    "enable_api_key_validation": true,
+    "mask_sensitive_logs": true,
+    "max_request_size": 2097152,
+    "rate_limit_requests": 200,
+    "rate_limit_window": 60
+  }
+}
 ```
 
 ## 🐛 Troubleshooting
 
 ### Common Issues
 
-1. **"Gemini API key not found"**
-   - Set `GEMINI_API_KEY` environment variable
-   - Ensure the key is valid and has appropriate permissions
+1. **Connection Issues**
+   ```bash
+   ptk --debug  # Enable debug logging
+   # Check server status and configuration
+   ```
 
-2. **"Failed to connect to MCP server"**
-   - Verify MCP server is running
-   - Check `MCP_SERVER_URL` configuration
-   - Ensure server supports SSE transport
+2. **API Key Issues**
+   ```bash
+   export GEMINI_API_KEY=your_key
+   # Verify key is valid and has permissions
+   ```
 
-3. **"No tools available"**
-   - Verify MCP server is properly configured
-   - Check server logs for errors
-   - Ensure tools are properly registered in the MCP server
+3. **Performance Issues**
+   ```bash
+   # Check logs for performance metrics
+   ptk -c logs 100
+   # Adjust configuration for better performance
+   ```
 
 ### Debug Mode
 
-Enable debug logging:
-
 ```bash
-LOG_LEVEL=DEBUG pipeline-bot
+# Enable comprehensive debugging
+pipeline-toolkit --debug --config debug-config.json
+
+# Check configuration validation
+ptk config
+
+# View detailed connection status
+ptk list servers
 ```
 
 ## 🤝 Contributing
@@ -305,10 +572,16 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 1. Fork the repository
 2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Run the test suite
-6. Submit a pull request
+3. Make your changes with tests
+4. Run the test suite
+5. Submit a pull request
+
+### Code Standards
+
+- Follow PEP 8 style guidelines
+- Add type hints to all functions
+- Write comprehensive tests
+- Update documentation for new features
 
 ## 📄 License
 
@@ -316,16 +589,20 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- **Google Gemini AI**: For providing the intelligent query processing capabilities
-- **MCP Protocol**: For the standardized server communication protocol
-- **Python Community**: For the excellent asyncio and typing support
+- [Model Context Protocol (MCP)](https://github.com/modelcontextprotocol) for the foundational protocol
+- [Google Gemini AI](https://ai.google.dev/) for the AI capabilities
+- [Rich](https://github.com/Textualize/rich) for the beautiful terminal UI
+- The open-source community for inspiration and tools
 
-## 📞 Support
+## 📈 Roadmap
 
-- **Documentation**: [GitHub Wiki](https://github.com/your-org/pipeline-toolkit/wiki)
-- **Issues**: [GitHub Issues](https://github.com/your-org/pipeline-toolkit/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/pipeline-toolkit/discussions)
+- [ ] Plugin system for custom tools
+- [ ] Web-based UI interface
+- [ ] Advanced analytics and reporting
+- [ ] Integration with more AI models
+- [ ] Collaborative features
+- [ ] Cloud deployment options
 
 ---
 
-**Pipeline Toolkit** - Making MCP servers accessible through natural language! 🚀
+**Pipeline Toolkit** - Transforming how you interact with MCP servers through intelligent AI orchestration.

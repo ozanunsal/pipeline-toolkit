@@ -4,6 +4,9 @@ google-genai>=0.11.0
 nest_asyncio>=1.5.0
 httpx>=0.28.0
 python-dotenv>=1.0.0
+rich>=13.7.0
+prompt-toolkit>=3.0.43
+click>=8.1.7
 
 # Development dependencies (optional)
 pytest>=7.0.0

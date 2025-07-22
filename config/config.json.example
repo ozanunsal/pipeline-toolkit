@@ -6,24 +6,84 @@
   "mcp_servers": [
     {
       "name": "My Jira Server",
+      "connection_type": "http",
       "url": "http://localhost:8080",
-      "enabled": false
+      "enabled": false,
+      "description": "HTTP-based Jira MCP server"
     },
     {
       "name": "My Brew Server",
+      "connection_type": "http",
       "url": "http://localhost:8050",
-      "enabled": true
+      "enabled": true,
+      "description": "HTTP-based Homebrew MCP server"
     },
     {
-      "name": "Custom MCP Server",
+      "name": "Custom HTTP MCP Server",
+      "connection_type": "http",
       "url": "http://localhost:9000",
       "endpoint": "/sse",
       "timeout": 60,
       "enabled": false,
-      "description": "Custom MCP server for specific integrations"
+      "description": "Custom HTTP MCP server for specific integrations"
+    },
+    {
+      "name": "Local File System MCP",
+      "connection_type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/files"],
+      "enabled": true,
+      "description": "Local filesystem MCP server via stdio"
+    },
+    {
+      "name": "Git MCP Server",
+      "connection_type": "stdio",
+      "command": "python",
+      "args": ["-m", "mcp_git"],
+      "working_directory": "/path/to/git/repo",
+      "environment": {
+        "GIT_CONFIG_GLOBAL": "/home/user/.gitconfig"
+      },
+      "enabled": false,
+      "description": "Git operations MCP server"
+    },
+    {
+      "name": "SQLite MCP Server",
+      "connection_type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sqlite", "/path/to/database.db"],
+      "enabled": false,
+      "description": "SQLite database MCP server"
+    },
+    {
+      "name": "Brave Search MCP",
+      "connection_type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "environment": {
+        "BRAVE_API_KEY": "your_brave_api_key_here"
+      },
+      "enabled": false,
+      "description": "Brave Search API MCP server"
     }
   ],
   "logging": {
-    "level": "DEBUG"
+    "level": "DEBUG",
+    "file": "logs/pipeline_toolkit.log"
+  },
+  "ui": {
+    "show_banner": true,
+    "show_tool_preview": true,
+    "theme": "default"
+  },
+  "security": {
+    "enable_api_key_validation": true,
+    "mask_sensitive_logs": true,
+    "allow_insecure_connections": false
+  },
+  "performance": {
+    "max_concurrent_requests": 10,
+    "connection_pool_size": 5,
+    "enable_caching": true
   }
 }
