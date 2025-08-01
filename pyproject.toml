@@ -10,6 +10,7 @@ authors = [
 ]
 dependencies = [
     "click>=8.1.7",
+    "mcp[cli]>=1.10.1",
     "nest-asyncio>=1.5.0",
     "prompt-toolkit>=3.0.43",
     "python-dotenv>=1.0.0",

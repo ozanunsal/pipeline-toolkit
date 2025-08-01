@@ -80,6 +80,7 @@ class MCPServerConfig:
         """Check if this is an SSE connection."""
         return self.connection_type == "sse"
 
+
 @dataclass
 class Config:
     """Enhanced main configuration class for Pipeline Toolkit."""
@@ -141,6 +142,7 @@ class Config:
 class ConfigurationError(Exception):
     """Exception raised for configuration errors."""
     pass
+
 
 class EnhancedConfigLoader:
     """Enhanced configuration loader with validation and environment support."""
