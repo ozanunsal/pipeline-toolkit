@@ -55,6 +55,7 @@ class CLI:
         # Command registry
         self.commands = {
             "help": self.cmd_help,
+            "list": self.cmd_list,
             "exit": self.cmd_exit,
             "quit": self.cmd_exit,
             "clear": self.cmd_clear,
@@ -201,6 +202,8 @@ class CLI:
 
         commands_info = [
             ("help", "Show this help message", "help"),
+            ("list servers", "List connected MCP servers", "list servers"),
+            ("list tools", "List available tools", "list tools"),
             ("clear", "Clear the screen", "clear"),
             ("exit/quit", "Exit the application", "exit"),
         ]
@@ -209,6 +212,39 @@ class CLI:
             help_table.add_row(command, description, example)
         console.print(help_table)
         console.print("\n💡 [blue]Tip: Use Tab for auto-completion and ↑↓ for command history[/blue]")
+
+    async def cmd_list(self, args: List[str]):
+        """List servers or tools."""
+        if not args:
+            console.print("[yellow]Usage: list <servers|tools> [/yellow]")
+            return
+
+        target = args[0].lower()
+
+        if target == "servers":
+            self.display_status()
+        elif target == "tools":
+            await self.list_tools()
+        else:
+            console.print("[yellow]Invalid option. Use: list [servers|tools][/yellow]")
+
+    async def list_tools(self):
+        """List all available tools grouped by MCP server."""
+        if not self.connected_clients:
+            console.print("[red]No MCP servers connected. Connect first.[/red]")
+            return
+
+        for client, server_name, tools in self.connected_clients:
+            table = Table(title=f"🛠️  Tools from {server_name}", show_header=True, header_style="bold green")
+            table.add_column("Tool Name", style="cyan")
+            table.add_column("Description", style="white")
+
+            for tool in tools:
+                name = tool.get("name", "Unknown") if isinstance(tool, dict) else str(tool)
+                desc = tool.get("description", "No description") if isinstance(tool, dict) else "No description"
+                table.add_row(name, desc[:80] + "..." if len(desc) > 80 else desc)
+            console.print(table)
+            console.print()
 
     async def cmd_clear(self, args: List[str]):
         """Clear the screen."""
