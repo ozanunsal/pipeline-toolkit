@@ -1,94 +1,21 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "pipeline-toolkit"
-version = "0.1.0"
-description = "AI-powered MCP client for intelligent tool selection and query processing using Gemini AI"
+version = "0.3.0"
+description = "Enhanced AI-Powered MCP Client with Interactive CLI and Advanced Tool Orchestration"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 license = {text = "MIT"}
 authors = [
-    {name = "Pipeline Toolkit Team"}
+    {name = "Ozan Unsal", email = "ounsal@redhat.com"}
 ]
-keywords = ["mcp", "gemini", "ai", "client", "tools", "automation"]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Topic :: Software Development :: Libraries :: Python Modules",
-    "Topic :: System :: Networking",
-]
-
 dependencies = [
-    "mcp[cli]>=1.10.1",
-    "google-genai>=0.11.0",
-    "nest_asyncio>=1.5.0",
-    "httpx>=0.28.0",
+    "click>=8.1.7",
+    "nest-asyncio>=1.5.0",
+    "prompt-toolkit>=3.0.43",
     "python-dotenv>=1.0.0",
+    "rich>=13.0.0",
 ]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "flake8>=6.0.0",
-    "mypy>=1.0.0",
-]
-
-[project.urls]
-Homepage = "https://github.com/your-org/pipeline-toolkit"
-Repository = "https://github.com/your-org/pipeline-toolkit"
-Issues = "https://github.com/your-org/pipeline-toolkit/issues"
-Documentation = "https://github.com/your-org/pipeline-toolkit#readme"
 
 [project.scripts]
-pipeline-bot = "src.cli:cli_main"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src"]
-
-[tool.black]
-line-length = 100
-target-version = ['py311']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
-
-[tool.isort]
-profile = "black"
-line_length = 100
-multi_line_output = 3
-
-[tool.mypy]
-python_version = "3.11"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-check_untyped_defs = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-asyncio_mode = "auto"
+pipeline-toolkit = "src.cli:cli_main"
+ptk = "src.cli:cli_main"

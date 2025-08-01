@@ -1,187 +1,308 @@
+#!/usr/bin/env python3
 """
-Pipeline Bot - Multi-MCP Server CLI Interface.
-
-This module provides a simple command-line interface for interacting with multiple
-MCP servers using Gemini AI for intelligent tool selection.
+Interactive CLI
+A minimal command-line interface with help and quit functionality.
 """
 
-import asyncio
-import logging
-import os
-import sys
-from typing import Any, List, Tuple
+from rich.console import Console
+from rich.prompt import Prompt, Confirm
+from rich.panel import Panel
+from rich.align import Align
+from rich.text import Text
+from rich.table import Table
+from rich import print as rprint
+from rich.live import Live
+from rich.spinner import Spinner
+from rich.markdown import Markdown
 
-from src.ai_agent import AIAgent
+from prompt_toolkit import PromptSession
+from prompt_toolkit.shortcuts import yes_no_dialog
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.formatted_text import HTML
+
+
+from typing import Any, Dict, List, Optional, Tuple
 from src.mcp_client import MCPClient
-from src.config import load_config, Config
+from pathlib import Path
+import asyncio
+import sys
+import os
+import click
 
+# Rich console for enchanced output
+console = Console()
 
-def setup_logging(config: Config) -> None:
-    """Setup file-based logging."""
-    log_file = os.path.join(os.path.dirname(__file__), '..', '..', config.logging.file)
-    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+class CLI:
+    """An interactive CLI with Rich formatting."""
+    
+    def __init__(self):
+        self.running = False
+        self.connected_clients: List[Tuple[MCPClient, str, List[Any]]] = []
+        self.session: Optional[PromptSession] = None
+        self.history_file = Path.home() / ".pipeline-toolkit-history"
+        self.commands = ["help", "exit", "quit"]
+        self.setup_prompt_session()
 
-    logging.basicConfig(
-        level=getattr(logging, config.logging.level.upper()),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[logging.FileHandler(log_file, mode='a')]
-    )
+        # Command registry
+        self.commands = {
+            "help": self.cmd_help,
+            "exit": self.cmd_exit,
+            "quit": self.cmd_exit,
+            "clear": self.cmd_clear,
+        }
 
+    def setup_prompt_session(self):
+        """Setup enhanced prompt session with auto-completion and history."""
+        try:
+            completer = WordCompleter(self.commands)
+            bindings = KeyBindings()
 
-def read_logs(config: Config, lines: int = 100) -> str:
-    """Read the last N lines from the log file."""
-    log_file = os.path.join(os.path.dirname(__file__), '..', '..', config.logging.file)
+            @bindings.add("c-c")
+            def _(event):
+                """Handle Ctrl+C."""
+                event.app.exit(exception=KeyboardInterrupt)
+            self.session = PromptSession(
+                history=FileHistory(str(self.history_file)),
+                auto_suggest=AutoSuggestFromHistory(),
+                completer=completer,
+                complete_while_typing=True,
+                key_bindings=bindings
+            )
+        except Exception as e:
+            console.print(f"[yellow]Warning: Could not setup enhanced prompt: {e}[/yellow]")
+            self.session = None
 
-    try:
-        with open(log_file, 'r') as f:
-            all_lines = f.readlines()
-            if lines > len(all_lines):
-                return ''.join(all_lines)
+    async def initialize(self):
+        """Initialize the CLI."""
+        try:
+            with console.status("[bold green]Initializing Pipeline Toolkit...", spinner="dots"):
+                # TODO: load config here
+
+                # Connect to MCP servers
+                pass
+                # await self.connect_to_servers()
+            
+            console.print("✅ [green]Pipeline Toolkit ready![/green]")
+        except Exception as e:
+            console.print(f"[red]❌ Initialization failed: {e}[/red]")
+            raise
+
+    async def connect_to_servers(self):
+        """Connect to MCP servers."""
+        # TODO: connect to MCP servers here
+
+        self.console.print("Initializing CLI...")
+        self.console.print("Welcome to Pipeline Toolkit")
+        self.console.print("Type 'help' for available commands or 'quit' to exit.\n")
+
+    async def process_query(self, query: str):
+        """Process a user query through the AI agent."""
+        # TODO: Check AI agent
+
+        console.print(f"\n🤔 [bold]Processing query:[/bold] {query}")
+        with Live(Spinner("dots", text="[blue]AI is thinking...", style="blue"), refresh_per_second=10, transient=True):
+            try:
+                # TODO: Process the query with the AI agent
+                response = "This is a test response from the AI agent."
+                # Display the response in a nice panel
+                response_panel = Panel(
+                    Markdown(response) if response else "No response generated",
+                    title="🤖 AI Response",
+                    border_style="green"
+                )
+                console.print(response_panel)
+
+            except Exception as e:
+                console.print(f"[red]❌ Error processing query: {e}[/red]")
+
+    def display_status(self):
+        """Display current connection status."""
+        if not self.connected_clients:
+            console.print("[red]⚠️  No MCP servers connected[/red]")
+            return
+
+        table = Table(title="🔗 Connected MCP Servers", show_header=True, header_style="bold magenta")
+        table.add_column("Server", style="cyan")
+        table.add_column("Status", style="green")
+        table.add_column("Tools", style="yellow")
+        table.add_column("URL", style="blue")
+        
+        for client, server_name, server_tools in self.connected_clients:
+            status = "✅ Connected" if client.is_connected else "❌ Disconnected"
+
+            # Show connection details based on type
+            if client.config.is_stdio_connection():
+                connection_info = f"stdio: {client.config.command}"
             else:
-                return ''.join(all_lines[-lines:])
-    except FileNotFoundError:
-        return "Log file not found."
-    except Exception as e:
-        return f"Error reading log file: {e}"
+                connection_info = client.config.url
 
+            table.add_row(
+                server_name,
+                status,
+                str(len(server_tools)),
+                connection_info
+            )
 
-async def main() -> None:
-    """Main function to run pipeline bot with multiple MCP clients."""
-    try:
-        # Load configuration from JSON files
-        config = load_config()
-        # Setup logging
-        setup_logging(config)
-        logger = logging.getLogger(__name__)
+        console.print(table)
+        console.print()
 
-        # Display banner if configured
-        if config.ui.show_banner:
-            print("🤖 Pipeline Bot - Multi-MCP Client")
-            print("=" * 40)
-
-        # Get MCP server configurations
-        mcp_configs = config.mcp_servers
-        print(f"🔗 Starting {len(mcp_configs)} MCP clients\n")
-
-        tools = []
-        connected_clients: List[Tuple[MCPClient, str, List[Any]]] = []
-
-        for server_config in mcp_configs:
-            client = MCPClient(server_config)
-            try:
-                await client.connect()
-                if client.is_connected:
-                    server_tools = await client.list_tools()
-                    tools.extend(server_tools)
-                    connected_clients.append((client, server_config.name, server_tools))
-                    print(f"✅ Connected to {server_config.name} with {len(server_tools)} tools")
-                else:
-                    print(f"❌ Failed to connect to {server_config.name}")
-            except Exception as e:
-                print(f"❌ Failed to connect to {server_config.name}: {e}")
-
-        if not connected_clients:
-            print("❌ No MCP servers connected. Please check your server configurations.")
-            print(f"📝 Edit config/config.json or check config/config.json.example")
-            sys.exit(1)
-
-        # Initialize Gemini AI agent with configuration
-        gemini = AIAgent(model=config.gemini.model, api_key=config.gemini.api_key)
-
-        # Register MCP clients with the AI agent
-        for client, server_name, server_tools in connected_clients:
-            gemini.register_mcp_client(client, server_name, server_tools)
-
-        # Update the Gemini AI agent with the tools
-        print(f"\n🔧 Converting {len(tools)} tools to Gemini functions...")
-        gemini.convert_tools_to_gemini_functions(tools)
-
-        # Show available tools if configured
-        if tools and config.ui.show_tool_preview:
-            print(f"\n📋 Available tools:")
-            max_preview = config.ui.max_tools_preview
-            for tool in tools[:max_preview]:
-                tool_name = tool.get('name', 'Unknown') if isinstance(tool, dict) else str(tool)
-                tool_desc = tool.get('description', 'No description') if isinstance(tool, dict) else 'No description'
-                print(f"   • {tool_name}: {tool_desc}")
-            if len(tools) > max_preview:
-                print(f"   ... and {len(tools) - max_preview} more tools")
-        else:
-            print("\n⚠️  No tools available")
-
-        # Interactive loop
-        print(f"\n🚀 Pipeline Bot ready! {len(tools)} tools available from {len(connected_clients)} servers")
-        print("Type 'quit' to exit")
-
-        while True:
-            try:
-                user_input = input(f"\n🤖 Pipeline Bot: ").strip()
-
-                if user_input.lower() in {"quit", "exit", "q"}:
-                    break
-                if not user_input:
-                    continue
-
-                # Check for log request first
-                if user_input.lower() in {"show me the logs", "show logs", "logs", "show me logs"}:
-                    print("📋 Recent logs:")
-                    print("-" * 60)
-                    print(read_logs(config, config.logging.max_log_lines))
-                    print("-" * 60)
-                    continue
-
-                print("🧠 Processing query...")
-                result = await gemini.process_query(user_input)
-
-                logger.info(f"Query result: {result}")
-
-                if result.get("success"):
-                    if result.get("gemini_response"):
-                        print(f"\n💬 {result['gemini_response']}")
-                    else:
-                        print(f"\n💬 Query processed successfully but no response generated")
-
-                    # Show function calls if any
-                    if result.get("function_calls"):
-                        print(f"\n🔧 Function calls made: {len(result['function_calls'])}")
-                        for call in result['function_calls']:
-                            print(f"   • {call['name']} with args: {call.get('args', {})}")
-                else:
-                    print(f"\n❌ Error: {result.get('error', 'Unknown error')}")
-
-            except (KeyboardInterrupt, EOFError):
-                break
-            except Exception as e:
-                logger.error(f"Error: {e}")
-                print(f"\n❌ Error: {e}")
-
-        # Cleanup: disconnect all clients
-        print(f"\n👋 Disconnecting from {len(connected_clients)} servers...")
-        for client, server_name, _ in connected_clients:
+    async def cmd_exit(self, args: List[str]):
+        """Exit the application."""
+        if self.session and not yes_no_dialog(
+            title="Confirm Exit",
+            text="Are you sure you want to exit Pipeline-Toolkit?",
+        ).run():
+            return
+        console.print("\n👋 [yellow]Disconnecting from servers...[/yellow]")
+        # Cleanup connections
+        for client, server_name, _ in self.connected_clients:
             try:
                 await client.disconnect()
-                print(f"✅ Disconnected from {server_name}")
+                console.print(f"✅ [green]Disconnected from {server_name}[/green]")
             except Exception as e:
-                logger.error(f"Error disconnecting from {server_name}: {e}")
-                print(f"⚠️  Error disconnecting from {server_name}: {e}")
+                console.print(f"⚠️  [yellow]Error disconnecting from {server_name}: {e}[/yellow]")
 
-    except Exception as e:
-        print(f"❌ Failed to load configuration: {e}")
-        print(f"📝 Make sure config/config.json exists and is valid")
-        print(f"💡 Copy config/config.json.example to config/config.json and edit it")
-        print(f"🔑 Don't forget to set your Gemini API key in config/config.json")
-        sys.exit(1)
+        console.print("\n[bold green]Thank you for using Pipeline Toolkit! 🚀[/bold green]")
+        self.running = False
+
+    async def cmd_help(self, args: List[str]):
+        """Display the help information."""
+        help_table = Table(title="📚 Available Commands", show_header=True, header_style="bold magenta")
+        help_table.add_column("Command", style="cyan", min_width=15)
+        help_table.add_column("Description", style="white")
+        help_table.add_column("Examples", style="yellow")
+
+        commands_info = [
+            ("help", "Show this help message", "help"),
+            ("clear", "Clear the screen", "clear"),
+            ("exit/quit", "Exit the application", "exit"),
+        ]
+
+        for command, description, example in commands_info:
+            help_table.add_row(command, description, example)
+        console.print(help_table)
+        console.print("\n💡 [blue]Tip: Use Tab for auto-completion and ↑↓ for command history[/blue]")
+
+    async def cmd_clear(self, args: List[str]):
+        """Clear the screen."""
+        os.system("cls" if os.name == "nt" else "clear")
+        self.display_banner()
+        
+    async def run(self):
+        """Main CLI loop."""
+        self.running = True
+
+        try:
+            await self.initialize()
+            self.display_banner()
+            self.display_status()
+
+            console.print("🚀 [bold green]Pipeline Toolkit is ready![/bold green]")
+            console.print("💡 [blue]Type 'help' for available commands, or just start asking questions![/blue]\n")
+            
+            while self.running:
+                try:
+                    if self.session:
+                        prompt_text = HTML("🤖 <ansibrightcyan><b>pipeline-toolkit</b></ansibrightcyan> > ")
+                        user_input = await asyncio.get_event_loop().run_in_executor(
+                            None, lambda: self.session.prompt(prompt_text)
+                        )
+                    else:
+                        user_input = Prompt.ask("🤖 [bold cyan]pipeline-toolkit[/bold cyan]")
+
+                    if not user_input.strip():
+                        continue
+                    parts = user_input.strip().split()
+                    cmd = parts[0].lower()
+                    args = parts[1:]
+
+                    if cmd in self.commands:
+                        await self.commands[cmd](args)
+                    else:
+                        await self.process_query(user_input)
+                except KeyboardInterrupt:
+                    if Confirm.ask("\n[yellow]Do you want to exit?[/yellow]"):
+                        await self.cmd_exit([])
+                        break
+                    else:
+                        console.print("[blue]Use 'exit' command to quit properly[/blue]")
+                        continue
+                except EOFError:
+                    await self.cmd_exit([])
+                    break
+                except Exception as e:
+                    console.print(f"[red]❌ Unexpected error: {e}[/red]")
+                    raise
+
+        except Exception as e:
+            console.print(f"[red]❌ Fatal error: {e}[/red]")
+            sys.exit(1)
+
+    def display_banner(self):
+        """Display the banner."""
+        banner = """
+ ███████████   ███                     ████   ███                                 ███████████                   ████  █████       ███   █████   
+░░███░░░░░███ ░░░                     ░░███  ░░░                                 ░█░░░███░░░█                  ░░███ ░░███       ░░░   ░░███    
+ ░███    ░███ ████  ████████   ██████  ░███  ████  ████████    ██████            ░   ░███  ░   ██████   ██████  ░███  ░███ █████ ████  ███████  
+ ░██████████ ░░███ ░░███░░███ ███░░███ ░███ ░░███ ░░███░░███  ███░░███ ██████████    ░███     ███░░███ ███░░███ ░███  ░███░░███ ░░███ ░░░███░   
+ ░███░░░░░░   ░███  ░███ ░███░███████  ░███  ░███  ░███ ░███ ░███████ ░░░░░░░░░░     ░███    ░███ ░███░███ ░███ ░███  ░██████░   ░███   ░███    
+ ░███         ░███  ░███ ░███░███░░░   ░███  ░███  ░███ ░███ ░███░░░                 ░███    ░███ ░███░███ ░███ ░███  ░███░░███  ░███   ░███ ███
+ █████        █████ ░███████ ░░██████  █████ █████ ████ █████░░██████                █████   ░░██████ ░░██████  █████ ████ █████ █████  ░░█████ 
+░░░░░        ░░░░░  ░███░░░   ░░░░░░  ░░░░░ ░░░░░ ░░░░ ░░░░░  ░░░░░░                ░░░░░     ░░░░░░   ░░░░░░  ░░░░░ ░░░░ ░░░░░ ░░░░░    ░░░░░  
+                    ░███                                                                                                                        
+                    █████                                                                                                                       
+                   ░░░░░                                                                                                                        """
+        welcome_text = Text()
+        welcome_text.append(banner, style="bold bright_green")
+        welcome_text.append("✨", style="bright_yellow")
+        subtitle = Text("AI-Powered Multi-MCP-Server Tool Orchestration Platform", style="dim cyan")
+
+        welcome_panel = Panel(
+            Align.center(welcome_text),
+            subtitle=subtitle,
+            border_style="bright_blue",
+            padding=(1, 2)
+        )
+        console.print(welcome_panel)
+        console.print()
+
+    
+@click.command()
+@click.option("--query", "-q", help="Execute a single query and exit")
+def main(query: Optional[str]):
+    """Main CLI loop."""
+    if query:
+        async def run_single_query():
+            cli = CLI()
+            try:
+                await cli.initialize()
+                await cli.process_query(query)
+            finally:
+                for client, server_name, _ in cli.connected_clients:
+                    try:
+                        await client.disconnect()
+                    except Exception:
+                        pass
+        asyncio.run(run_single_query())
+        return
+    
+    cli = CLI()
+    asyncio.run(cli.run())
 
 
 def cli_main() -> None:
-    """Synchronous entry point for CLI script."""
+    """Entry point for the CLI application."""
     try:
-        asyncio.run(main())
+        main()
     except KeyboardInterrupt:
-        print("\n👋 Terminated")
-        logging.getLogger(__name__).info("Application terminated by user")
+        console.print("\n👋 [yellow]Goodbye![/yellow]")
         sys.exit(0)
-
+    except Exception as e:
+        console.print(f"[red]❌ Fatal error: {e}[/red]")
+        sys.exit(1)
 
 if __name__ == "__main__":
     cli_main()
