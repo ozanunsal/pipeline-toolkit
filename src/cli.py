@@ -4,34 +4,33 @@ Interactive CLI
 A minimal command-line interface with help and quit functionality.
 """
 
-from rich.console import Console
-from rich.prompt import Prompt, Confirm
-from rich.panel import Panel
-from rich.align import Align
-from rich.text import Text
-from rich.table import Table
-from rich.live import Live
-from rich.spinner import Spinner
-from rich.markdown import Markdown
-
-from prompt_toolkit import PromptSession
-from prompt_toolkit.shortcuts import yes_no_dialog
-from prompt_toolkit.history import FileHistory
-from prompt_toolkit.completion import WordCompleter
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-from prompt_toolkit.formatted_text import HTML
-
-
-from typing import Any, Dict, List, Optional, Tuple
-from src.mcp_client import MCPClient
-from src.config import load_config, Config
-from pathlib import Path
 import asyncio
 import logging
-import sys
 import os
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
 import click
+from prompt_toolkit import PromptSession
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.shortcuts import yes_no_dialog
+from rich.align import Align
+from rich.console import Console
+from rich.live import Live
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.prompt import Confirm, Prompt
+from rich.spinner import Spinner
+from rich.table import Table
+from rich.text import Text
+
+from src.config import Config, load_config
+from src.mcp_client import MCPClient
 
 # Configure logging
 
@@ -39,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 # Rich console for enchanced output
 console = Console()
+
 
 class CLI:
     """An interactive CLI with Rich formatting."""
@@ -71,21 +71,26 @@ class CLI:
             def _(event):
                 """Handle Ctrl+C."""
                 event.app.exit(exception=KeyboardInterrupt)
+
             self.session = PromptSession(
                 history=FileHistory(str(self.history_file)),
                 auto_suggest=AutoSuggestFromHistory(),
                 completer=completer,
                 complete_while_typing=True,
-                key_bindings=bindings
+                key_bindings=bindings,
             )
         except Exception as e:
-            console.print(f"[yellow]Warning: Could not setup enhanced prompt: {e}[/yellow]")
+            console.print(
+                f"[yellow]Warning: Could not setup enhanced prompt: {e}[/yellow]"
+            )
             self.session = None
 
     async def initialize(self):
         """Initialize the CLI."""
         try:
-            with console.status("[bold green]Initializing Pipeline Toolkit...", spinner="dots"):
+            with console.status(
+                "[bold green]Initializing Pipeline Toolkit...", spinner="dots"
+            ):
                 self.config = load_config()
                 # Connect to MCP servers
                 await self.connect_to_servers()
@@ -103,21 +108,30 @@ class CLI:
                 logger.info(f"Skipping disabled server: {server_config.name}")
                 continue
 
-            logger.info(f"Attempting to connect to {server_config.name} ({server_config.connection_type})")
+            logger.info(
+                f"Attempting to connect to {server_config.name} ({server_config.connection_type})"
+            )
             client = MCPClient(server_config)
             try:
                 await client.connect()
                 if client.is_connected:
                     server_tools = await client.list_tools()
-                    self.connected_clients.append((client, server_config.name, server_tools))
+                    self.connected_clients.append(
+                        (client, server_config.name, server_tools)
+                    )
 
                     # TODO: Register tools to the AI agent
             except Exception as e:
                 logger.error(f"Failed to connect to {server_config.name}: {e}")
                 import traceback
-                logger.debug(f"Full traceback for {server_config.name}: \n{traceback.format_exc()}")
+
+                logger.debug(
+                    f"Full traceback for {server_config.name}: \n{traceback.format_exc()}"
+                )
         if not self.connected_clients:
-            console.print("[red]❌ No MCP servers connected. Check your configuration.[/red]")
+            console.print(
+                "[red]❌ No MCP servers connected. Check your configuration.[/red]"
+            )
             return False
 
         # TODO: Update AI agent with tools
@@ -128,7 +142,11 @@ class CLI:
         # TODO: Check AI agent
 
         console.print(f"\n🤔 [bold]Processing query:[/bold] {query}")
-        with Live(Spinner("dots", text="[blue]AI is thinking...", style="blue"), refresh_per_second=10, transient=True):
+        with Live(
+            Spinner("dots", text="[blue]AI is thinking...", style="blue"),
+            refresh_per_second=10,
+            transient=True,
+        ):
             try:
                 # TODO: Process the query with the AI agent
                 response = "This is a test response from the AI agent."
@@ -136,7 +154,7 @@ class CLI:
                 response_panel = Panel(
                     Markdown(response) if response else "No response generated",
                     title="🤖 AI Response",
-                    border_style="green"
+                    border_style="green",
                 )
                 console.print(response_panel)
 
@@ -149,7 +167,11 @@ class CLI:
             console.print("[red]⚠️  No MCP servers connected[/red]")
             return
 
-        table = Table(title="🔗 Connected MCP Servers", show_header=True, header_style="bold magenta")
+        table = Table(
+            title="🔗 Connected MCP Servers",
+            show_header=True,
+            header_style="bold magenta",
+        )
         table.add_column("Server", style="cyan")
         table.add_column("Status", style="green")
         table.add_column("Tools", style="yellow")
@@ -164,22 +186,20 @@ class CLI:
             else:
                 connection_info = f"stdio: {client.config.command}"
 
-            table.add_row(
-                server_name,
-                status,
-                str(len(server_tools)),
-                connection_info
-            )
+            table.add_row(server_name, status, str(len(server_tools)), connection_info)
 
         console.print(table)
         console.print()
 
     async def cmd_exit(self, args: List[str]):
         """Exit the application."""
-        if self.session and not yes_no_dialog(
-            title="Confirm Exit",
-            text="Are you sure you want to exit Pipeline-Toolkit?",
-        ).run():
+        if (
+            self.session
+            and not yes_no_dialog(
+                title="Confirm Exit",
+                text="Are you sure you want to exit Pipeline-Toolkit?",
+            ).run()
+        ):
             return
         console.print("\n👋 [yellow]Disconnecting from servers...[/yellow]")
         # Cleanup connections
@@ -188,14 +208,20 @@ class CLI:
                 await client.disconnect()
                 console.print(f"✅ [green]Disconnected from {server_name}[/green]")
             except Exception as e:
-                console.print(f"⚠️  [yellow]Error disconnecting from {server_name}: {e}[/yellow]")
+                console.print(
+                    f"⚠️  [yellow]Error disconnecting from {server_name}: {e}[/yellow]"
+                )
 
-        console.print("\n[bold green]Thank you for using Pipeline Toolkit! 🚀[/bold green]")
+        console.print(
+            "\n[bold green]Thank you for using Pipeline Toolkit! 🚀[/bold green]"
+        )
         self.running = False
 
     async def cmd_help(self, args: List[str]):
         """Display the help information."""
-        help_table = Table(title="📚 Available Commands", show_header=True, header_style="bold magenta")
+        help_table = Table(
+            title="📚 Available Commands", show_header=True, header_style="bold magenta"
+        )
         help_table.add_column("Command", style="cyan", min_width=15)
         help_table.add_column("Description", style="white")
         help_table.add_column("Examples", style="yellow")
@@ -211,7 +237,9 @@ class CLI:
         for command, description, example in commands_info:
             help_table.add_row(command, description, example)
         console.print(help_table)
-        console.print("\n💡 [blue]Tip: Use Tab for auto-completion and ↑↓ for command history[/blue]")
+        console.print(
+            "\n💡 [blue]Tip: Use Tab for auto-completion and ↑↓ for command history[/blue]"
+        )
 
     async def cmd_list(self, args: List[str]):
         """List servers or tools."""
@@ -235,13 +263,23 @@ class CLI:
             return
 
         for client, server_name, tools in self.connected_clients:
-            table = Table(title=f"🛠️  Tools from {server_name}", show_header=True, header_style="bold green")
+            table = Table(
+                title=f"🛠️  Tools from {server_name}",
+                show_header=True,
+                header_style="bold green",
+            )
             table.add_column("Tool Name", style="cyan")
             table.add_column("Description", style="white")
 
             for tool in tools:
-                name = tool.get("name", "Unknown") if isinstance(tool, dict) else str(tool)
-                desc = tool.get("description", "No description") if isinstance(tool, dict) else "No description"
+                name = (
+                    tool.get("name", "Unknown") if isinstance(tool, dict) else str(tool)
+                )
+                desc = (
+                    tool.get("description", "No description")
+                    if isinstance(tool, dict)
+                    else "No description"
+                )
                 table.add_row(name, desc[:80] + "..." if len(desc) > 80 else desc)
             console.print(table)
             console.print()
@@ -261,17 +299,23 @@ class CLI:
             self.display_status()
 
             console.print("🚀 [bold green]Pipeline Toolkit is ready![/bold green]")
-            console.print("💡 [blue]Type 'help' for available commands, or just start asking questions![/blue]\n")
+            console.print(
+                "💡 [blue]Type 'help' for available commands, or just start asking questions![/blue]\n"
+            )
 
             while self.running:
                 try:
                     if self.session:
-                        prompt_text = HTML("🤖 <ansibrightcyan><b>pipeline-toolkit</b></ansibrightcyan> > ")
+                        prompt_text = HTML(
+                            "🤖 <ansibrightcyan><b>pipeline-toolkit</b></ansibrightcyan> > "
+                        )
                         user_input = await asyncio.get_event_loop().run_in_executor(
                             None, lambda: self.session.prompt(prompt_text)
                         )
                     else:
-                        user_input = Prompt.ask("🤖 [bold cyan]pipeline-toolkit[/bold cyan]")
+                        user_input = Prompt.ask(
+                            "🤖 [bold cyan]pipeline-toolkit[/bold cyan]"
+                        )
 
                     if not user_input.strip():
                         continue
@@ -288,7 +332,9 @@ class CLI:
                         await self.cmd_exit([])
                         break
                     else:
-                        console.print("[blue]Use 'exit' command to quit properly[/blue]")
+                        console.print(
+                            "[blue]Use 'exit' command to quit properly[/blue]"
+                        )
                         continue
                 except EOFError:
                     await self.cmd_exit([])
@@ -318,13 +364,15 @@ class CLI:
         welcome_text = Text()
         welcome_text.append(banner, style="bold bright_green")
         welcome_text.append("✨", style="bright_yellow")
-        subtitle = Text("AI-Powered Multi-MCP-Server Tool Orchestration Platform", style="dim cyan")
+        subtitle = Text(
+            "AI-Powered Multi-MCP-Server Tool Orchestration Platform", style="dim cyan"
+        )
 
         welcome_panel = Panel(
             Align.center(welcome_text),
             subtitle=subtitle,
             border_style="bright_blue",
-            padding=(1, 2)
+            padding=(1, 2),
         )
         console.print(welcome_panel)
         console.print()
@@ -335,6 +383,7 @@ class CLI:
 def main(query: Optional[str]):
     """Main CLI loop."""
     if query:
+
         async def run_single_query():
             cli = CLI()
             try:
@@ -346,6 +395,7 @@ def main(query: Optional[str]):
                         await client.disconnect()
                     except Exception:
                         pass
+
         asyncio.run(run_single_query())
         return
 
@@ -363,6 +413,7 @@ def cli_main() -> None:
     except Exception as e:
         console.print(f"[red]❌ Fatal error: {e}[/red]")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     cli_main()

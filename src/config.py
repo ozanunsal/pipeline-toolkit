@@ -4,19 +4,22 @@ Enhanced Configuration Management - Advanced Configuration Loading and Validatio
 This module provides robust configuration management with comprehensive validation,
 environment variable support, schema validation, and intelligent defaults.
 """
-import logging
+
 import json
+import logging
+import os
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Any
 from pathlib import Path
-import os
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class MCPServerConfig:
     """Enhanced MCP Server Configuration with support for sse and stdio connections."""
+
     name: str
     connection_type: str = "sse"
     enabled: bool = True
@@ -38,7 +41,9 @@ class MCPServerConfig:
             raise ValueError("MCP server name is required.")
 
         if self.connection_type not in ["sse", "stdio"]:
-            raise ValueError(f"Connection type must be either 'sse' or 'stdio', got: {self.connection_type}")
+            raise ValueError(
+                f"Connection type must be either 'sse' or 'stdio', got: {self.connection_type}"
+            )
 
         # Validate based on connection type
         if self.connection_type == "sse":
@@ -58,21 +63,26 @@ class MCPServerConfig:
         if not self.command or not self.command.strip():
             raise ValueError("Command is required for stdio connections.")
         if self.working_directory and not Path(self.working_directory).exists():
-            logger.warning(f"Working directory does not exist: {self.working_directory}")
+            logger.warning(
+                f"Working directory does not exist: {self.working_directory}"
+            )
         if self.args is not None and not isinstance(self.args, list):
             raise ValueError("Args must be a list of strings.")
         if self.environment is not None and not isinstance(self.environment, dict):
-            raise ValueError("Environment must be a dictionary of string ket-value pairs")
+            raise ValueError(
+                "Environment must be a dictionary of string ket-value pairs"
+            )
 
     def _is_valid_url(self, url: str) -> bool:
         """Check if URL is valid."""
         url_pattern = re.compile(
-            r'^https?://'  # http:// or https://
-            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
-            r'localhost|'  # localhost...
-            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
-            r'(?::\d+)?'  # optional port
-            r'(?:/?|[/?]\S+)$', re.IGNORECASE
+            r"^https?://"  # http:// or https://
+            r"(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|"  # domain...
+            r"localhost|"  # localhost...
+            r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"  # ...or ip
+            r"(?::\d+)?"  # optional port
+            r"(?:/?|[/?]\S+)$",
+            re.IGNORECASE,
         )
         return bool(url_pattern.match(url))
 
@@ -84,6 +94,7 @@ class MCPServerConfig:
 @dataclass
 class Config:
     """Enhanced main configuration class for Pipeline Toolkit."""
+
     mcp_servers: List[MCPServerConfig]
 
     def __post_init__(self):
@@ -135,17 +146,21 @@ class Config:
         for server in self.mcp_servers:
             if server.enabled and server.is_sse_connection():
                 if not server.url or not server.url.startswith(("http", "https")):
-                    issues.append(f"Server {server.name} URL should start with http:// or https://")
+                    issues.append(
+                        f"Server {server.name} URL should start with http:// or https://"
+                    )
         return issues
 
 
 class ConfigurationError(Exception):
     """Exception raised for configuration errors."""
+
     pass
 
 
 class EnhancedConfigLoader:
     """Enhanced configuration loader with validation and environment support."""
+
     def __init__(self):
         self.config_file = self._get_config_file_path()
         self.env_prefix = "PIPELINE_TOOLKIT_"
@@ -172,7 +187,9 @@ class EnhancedConfigLoader:
     def _load_config_file(self) -> Dict[str, Any]:
         """Load configuration from JSON file."""
         if not self.config_file.exists():
-            raise ConfigurationError(f"Configuration file not found: {self.config_file}")
+            raise ConfigurationError(
+                f"Configuration file not found: {self.config_file}"
+            )
         try:
             with open(self.config_file, "r", encoding="utf-8") as f:
                 config_dict = json.load(f)
@@ -206,13 +223,14 @@ class EnhancedConfigLoader:
                         mcp_servers.append(mcp_server)
                         logger.debug(f"Added MCP server: {mcp_server.name}")
                     except Exception as e:
-                        logger.warning(f"Invalid MCP server configuration {server_dict.get('name', 'unknown')}: {e}")
+                        logger.warning(
+                            f"Invalid MCP server configuration {server_dict.get('name', 'unknown')}: {e}"
+                        )
 
-            return Config(
-                mcp_servers=mcp_servers
-            )
+            return Config(mcp_servers=mcp_servers)
         except Exception as e:
             raise ConfigurationError(f"Failed to create configuration object: {e}")
+
 
 # Global config loader instance
 _config_loader = EnhancedConfigLoader()
