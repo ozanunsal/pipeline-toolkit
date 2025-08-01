@@ -10,7 +10,6 @@ from rich.panel import Panel
 from rich.align import Align
 from rich.text import Text
 from rich.table import Table
-from rich import print as rprint
 from rich.live import Live
 from rich.spinner import Spinner
 from rich.markdown import Markdown
@@ -26,6 +25,7 @@ from prompt_toolkit.formatted_text import HTML
 
 from typing import Any, Dict, List, Optional, Tuple
 from src.mcp_client import MCPClient
+from src.config import load_config, Config
 from pathlib import Path
 import asyncio
 import sys
@@ -79,8 +79,7 @@ class CLI:
         """Initialize the CLI."""
         try:
             with console.status("[bold green]Initializing Pipeline Toolkit...", spinner="dots"):
-                # TODO: load config here
-
+                self.config = load_config()
                 # Connect to MCP servers
                 pass
                 # await self.connect_to_servers()
