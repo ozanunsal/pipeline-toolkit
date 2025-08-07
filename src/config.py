@@ -63,15 +63,16 @@ class MCPServerConfig:
         if not self.command or not self.command.strip():
             raise ValueError("Command is required for stdio connections.")
         if self.working_directory and not Path(self.working_directory).exists():
-            logger.warning(
-                f"Working directory does not exist: {self.working_directory}"
-            )
+            logger.warning(f"Working directory does not exist: {self.working_directory}")
         if self.args is not None and not isinstance(self.args, list):
             raise ValueError("Args must be a list of strings.")
         if self.environment is not None and not isinstance(self.environment, dict):
-            raise ValueError(
-                "Environment must be a dictionary of string ket-value pairs"
-            )
+            raise ValueError("Environment must be a dictionary of string ket-value pairs")
+        # Normalize args to list of strings
+        if self.args is None:
+            self.args = []
+        else:
+            self.args = [str(a) for a in self.args]
 
     def _is_valid_url(self, url: str) -> bool:
         """Check if URL is valid."""
@@ -89,6 +90,10 @@ class MCPServerConfig:
     def is_sse_connection(self) -> bool:
         """Check if this is an SSE connection."""
         return self.connection_type == "sse"
+
+    def is_stdio_connection(self) -> bool:
+        """Check if this is a stdio connection."""
+        return self.connection_type == "stdio"
 
 
 @dataclass

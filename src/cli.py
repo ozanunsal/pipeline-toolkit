@@ -175,10 +175,14 @@ class CLI:
         table.add_column("Server", style="cyan")
         table.add_column("Status", style="green")
         table.add_column("Tools", style="yellow")
+        table.add_column("Transport", style="magenta")
         table.add_column("URL", style="blue")
 
         for client, server_name, server_tools in self.connected_clients:
             status = "✅ Connected" if client.is_connected else "❌ Disconnected"
+
+            # Transport type
+            transport = client.config.connection_type
 
             # Show connection details based on type
             if client.config.is_sse_connection():
@@ -186,7 +190,13 @@ class CLI:
             else:
                 connection_info = f"stdio: {client.config.command}"
 
-            table.add_row(server_name, status, str(len(server_tools)), connection_info)
+            table.add_row(
+                server_name,
+                status,
+                str(len(server_tools)),
+                transport,
+                connection_info,
+            )
 
         console.print(table)
         console.print()

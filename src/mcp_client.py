@@ -1,12 +1,14 @@
 import asyncio
 import logging
 import os
+import io
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
 import nest_asyncio
 from mcp import ClientSession
 from mcp.client.sse import sse_client
+from mcp.client.stdio import stdio_client, StdioServerParameters
 
 from src.config import MCPServerConfig
 
@@ -24,6 +26,30 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 nest_asyncio.apply()
+
+
+class _ErrLogToLogger(io.TextIOBase):
+    """Redirect server stderr to logger, line-buffered."""
+    def __init__(self, logger: logging.Logger, level: int = logging.INFO) -> None:
+        self._logger = logger
+        self._level = level
+        self._buffer: str = ""
+
+    def write(self, s: str) -> int:  # type: ignore[override]
+        if not isinstance(s, str):
+            s = str(s)
+        self._buffer += s
+        while "\n" in self._buffer:
+            line, self._buffer = self._buffer.split("\n", 1)
+            line = line.strip()
+            if line:
+                self._logger.log(self._level, line)
+        return len(s)
+
+    def flush(self) -> None:  # type: ignore[override]
+        if self._buffer.strip():
+            self._logger.log(self._level, self._buffer.strip())
+        self._buffer = ""
 
 
 class ConnectionState(Enum):
@@ -158,10 +184,14 @@ class MCPClient:
                 )
                 await asyncio.wait_for(connect_task, timeout=self.connection_timeout)
             else:
-                # Implement stdio connection here
-                raise NotImplementedError(
-                    f"Connection type {self.config.connection_type} not implemented"
+                # stdio transport
+                logger.info(
+                    f"Connecting to MCP server via stdio: {self.config.command}"
                 )
+                connect_task = asyncio.create_task(
+                    self._establish_stdio_connection()
+                )
+                await asyncio.wait_for(connect_task, timeout=self.connection_timeout)
 
             # Load available tools
             await self._load_tools()
@@ -189,6 +219,74 @@ class MCPClient:
         self.session = ClientSession(self.read_stream, self.write_stream)
         await self.session.__aenter__()
         await self.session.initialize()
+
+    async def _establish_stdio_connection(self) -> None:
+        """Establish a stdio connection to the MCP server using configured command."""
+        if not self.config.command:
+            raise ValueError("Missing 'command' for stdio connection")
+
+        # Expand ~ and $VARS in command, args and working directory
+        def _expand(value: Optional[str]) -> Optional[str]:
+            if value is None:
+                return None
+            return os.path.expandvars(os.path.expanduser(value))
+
+        command = _expand(self.config.command)
+        args = [
+            _expand(arg) if isinstance(arg, str) else arg  # type: ignore[func-returns-value]
+            for arg in (self.config.args or [])
+        ]
+        env: Optional[Dict[str, str]] = None
+        if self.config.environment:
+            env = {k: _expand(v) or "" for k, v in self.config.environment.items()}
+        cwd = _expand(self.config.working_directory)
+        if cwd and not os.path.isdir(cwd):
+            logger.warning("Working directory not found, ignoring: %s", cwd)
+            cwd = None
+
+        logger.info(
+            "Starting stdio MCP server: %s %s", command, " ".join(args)
+        )
+        if cwd:
+            logger.info("Working directory: %s", cwd)
+
+        try:
+            server_params = StdioServerParameters(
+                command=command or self.config.command,
+                args=args,
+                env=env,
+                cwd=cwd,
+                encoding="utf-8",
+                encoding_error_handler="strict",
+            )
+            # Route server stderr to our file handler stream (not the terminal)
+            err_stream = None
+            # Prefer a file stream from any handler on the root logger or our module logger
+            for lg in (logging.getLogger(), logging.getLogger(__name__)):
+                for h in getattr(lg, "handlers", []):
+                    stream = getattr(h, "stream", None)
+                    if stream is not None and hasattr(stream, "write"):
+                        err_stream = stream
+                        break
+                if err_stream is not None:
+                    break
+            if err_stream is None:
+                # Fallback: open the same pipeline log file in append mode
+                err_stream = open(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "logs", "pipeline_bot.log")), "a", buffering=1)
+
+            self.context_manager = stdio_client(server_params, errlog=err_stream)
+            self.read_stream, self.write_stream = await self.context_manager.__aenter__()
+
+            # Create and initialize MCP session
+            self.session = ClientSession(self.read_stream, self.write_stream)
+            await self.session.__aenter__()
+            await self.session.initialize()
+        except FileNotFoundError:
+            logger.error("Failed to start stdio command. Not found: %s", command)
+            raise
+        except Exception as e:
+            logger.error("Failed to establish stdio connection: %s", e)
+            raise
 
     async def disconnect(self) -> None:
         """Disconnect from the MCP server and clean up resources."""
