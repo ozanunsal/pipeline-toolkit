@@ -4,24 +4,39 @@ import os
 import io
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
+from pathlib import Path
 
 import nest_asyncio
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client, StdioServerParameters
 
-from src.config import MCPServerConfig
+from src.config import MCPServerConfig, load_config
 
-# Configure logging
-log_file = os.path.join(
-    os.path.dirname(__file__), "..", "..", "logs", "pipeline_bot.log"
-)
-os.makedirs(os.path.dirname(log_file), exist_ok=True)
+def _resolve_log_file() -> Path:
+    # Prefer config.json 'log_file' if present
+    try:
+        cfg = load_config()
+        if getattr(cfg, "log_file", None):
+            p = Path(cfg.log_file).expanduser()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            return p.resolve()
+    except Exception:
+        # Config may not be loadable here; fall back to env/default
+        pass
+
+    # Else prefer env var; otherwise use CWD/logs/pipeline_bot.log
+    log_dir = Path(os.getenv("PIPELINE_TOOLKIT_LOG_DIR", str(Path.cwd() / "logs"))).resolve()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir / "pipeline_bot.log"
+
+log_file = _resolve_log_file()
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler(log_file, mode="a")],
+    datefmt="%Y-%m-%dT%H:%M:%SZ",
+    handlers=[logging.FileHandler(str(log_file), mode="w")],
 )
 
 logger = logging.getLogger(__name__)
@@ -261,7 +276,6 @@ class MCPClient:
             )
             # Route server stderr to our file handler stream (not the terminal)
             err_stream = None
-            # Prefer a file stream from any handler on the root logger or our module logger
             for lg in (logging.getLogger(), logging.getLogger(__name__)):
                 for h in getattr(lg, "handlers", []):
                     stream = getattr(h, "stream", None)
@@ -271,8 +285,8 @@ class MCPClient:
                 if err_stream is not None:
                     break
             if err_stream is None:
-                # Fallback: open the same pipeline log file in append mode
-                err_stream = open(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "logs", "pipeline_bot.log")), "a", buffering=1)
+                # Fallback: open the configured log file
+                err_stream = open(str(log_file), "a", buffering=1)
 
             self.context_manager = stdio_client(server_params, errlog=err_stream)
             self.read_stream, self.write_stream = await self.context_manager.__aenter__()

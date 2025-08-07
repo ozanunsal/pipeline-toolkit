@@ -101,6 +101,7 @@ class Config:
     """Enhanced main configuration class for Pipeline Toolkit."""
 
     mcp_servers: List[MCPServerConfig]
+    log_file: Optional[str] = None
 
     def __post_init__(self):
         """Validate main configuration."""
@@ -135,7 +136,8 @@ class Config:
                     "command": server.command,
                 }
                 for server in self.mcp_servers
-            ]
+            ],
+            "log_file": self.log_file,
         }
         return config_dict
 
@@ -232,7 +234,10 @@ class EnhancedConfigLoader:
                             f"Invalid MCP server configuration {server_dict.get('name', 'unknown')}: {e}"
                         )
 
-            return Config(mcp_servers=mcp_servers)
+            return Config(
+                mcp_servers=mcp_servers,
+                log_file=config_dict.get("log_file")
+            )
         except Exception as e:
             raise ConfigurationError(f"Failed to create configuration object: {e}")
 

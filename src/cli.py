@@ -56,6 +56,8 @@ class CLI:
         self.commands = {
             "help": self.cmd_help,
             "list": self.cmd_list,
+            "logs": self.cmd_logs,
+            "show": self.cmd_show,
             "exit": self.cmd_exit,
             "quit": self.cmd_exit,
             "clear": self.cmd_clear,
@@ -240,6 +242,7 @@ class CLI:
             ("help", "Show this help message", "help"),
             ("list servers", "List connected MCP servers", "list servers"),
             ("list tools", "List available tools", "list tools"),
+            ("show logs", "Show the saved logs", "show logs"),
             ("clear", "Clear the screen", "clear"),
             ("exit/quit", "Exit the application", "exit"),
         ]
@@ -298,6 +301,50 @@ class CLI:
         """Clear the screen."""
         os.system("cls" if os.name == "nt" else "clear")
         self.display_banner()
+
+    def _resolve_log_file(self) -> Path:
+        """Resolve the log file path based on config or defaults.
+
+        - If config.log_file is set, use it (expanding ~).
+        - Else, use PIPELINE_TOOLKIT_LOG_DIR/logs path or CWD/logs.
+        - File name defaults to pipeline_bot.log.
+        """
+        try:
+            if self.config and getattr(self.config, "log_file", None):
+                return Path(self.config.log_file).expanduser().resolve()
+        except Exception:
+            pass
+
+        base_dir = Path(os.getenv("PIPELINE_TOOLKIT_LOG_DIR", str(Path.cwd() / "logs"))).resolve()
+        return base_dir / "pipeline_bot.log"
+
+    async def cmd_logs(self, args: List[str]):
+        """Display the saved logs in the console."""
+        log_path = self._resolve_log_file()
+        if not log_path.exists():
+            console.print(f"[yellow]No log file found at:[/yellow] {log_path}")
+            return
+
+        try:
+            content = log_path.read_text(encoding="utf-8", errors="replace")
+        except Exception as e:
+            console.print(f"[red]Failed to read log file:[/red] {e}")
+            return
+
+        panel = Panel(
+            content if content else "(empty)",
+            title=f"📜 Logs — {log_path}",
+            border_style="blue",
+            padding=(1, 2),
+        )
+        console.print(panel)
+
+    async def cmd_show(self, args: List[str]):
+        """Alias for 'show logs' -> logs display."""
+        if args and args[0].lower() == "logs":
+            await self.cmd_logs(args[1:])
+        else:
+            console.print("[yellow]Usage: show logs[/yellow]")
 
     async def run(self):
         """Main CLI loop."""
