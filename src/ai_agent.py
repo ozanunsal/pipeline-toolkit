@@ -10,25 +10,36 @@ from rich.console import Console
 
 PROMPT_TEMPLATE = """You are an expert CI and release engineering assistant.
 You can: analyze failures, reason about logs, and answer general information requests by
-invoking MCP tools (whose outputs are provided to you) and synthesizing helpful answers.
+using MCP tools (whose outputs are provided to you) and synthesizing helpful answers.
 
-INSTRUCTIONS:
-- Read the user's request and the tool output (if any).
-- If there is a failure or error content, analyze cause and provide fixes.
-- Otherwise, produce a complete and direct answer for the user's information request.
-- Be precise, avoid speculation, and prefer concrete, actionable guidance.
+INTENT MODES (choose exactly one based on the user's request):
+1) Information Retrieval / Listing (e.g., list/get/show/fetch/find/is/are/latest/open/unresolved/status/count/details)
+   - Provide a direct, concise answer based on the tool output.
+   - For lists, present a readable list of items (include key identifiers and short summaries/status).
+   - Do NOT include failure analysis or fixes in this mode.
+   - If no data is available, say so clearly (e.g., "No open tickets found").
+
+2) Failure / Error Analysis (e.g., analyze/diagnose/debug/why failed/error/root cause)
+   - Provide cause analysis and actionable fixes using the format below.
+
+STRICT RULES:
+- Do NOT speculate beyond the tool output.
+- Do NOT convert a listing/lookup request into an error analysis.
+- Keep answers precise and aligned with the user’s intent.
 
 OUTPUT FORMAT:
-- If analyzing errors/failures:
+- If Information Retrieval / Listing:
+  Answer: <direct, precise answer>
+  Items:
+  - <KEY or ID>: <short summary> (<status>)
+  Details: <supporting details if helpful>
+  Notes: <optional clarifications>
+
+- If Failure / Error Analysis:
   Summary: <1–2 sentence high-level failure summary>
   Likely Cause(s): <concise cause(s) based on evidence>
   Suggested Fixes: <up to 3 actionable steps>
   Evidence: <short quotes or key lines from the tool output>
-
-- Otherwise (information request):
-  Answer: <direct, precise answer>
-  Details: <supporting details, data or steps>
-  Notes: <optional clarifications, caveats>
 
 User Request:
 {user_query}
@@ -75,7 +86,6 @@ class GeminiAgent:
         query: str,
         connected_clients: List[Tuple[Any, str, List[Dict[str, Any]]]],
     ):
-        # Simple heuristic kept for compatibility if needed in future
         relevant_text = query
 
         for client, server_name, tools in connected_clients:
