@@ -11,7 +11,7 @@ from mcp import ClientSession
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client, StdioServerParameters
 
-from src.config import MCPServerConfig, load_config
+from config import MCPServerConfig, load_config
 
 def _resolve_log_file() -> Path:
     # Prefer config.json 'log_file' if present
@@ -372,6 +372,17 @@ class MCPClient:
             }
             for tool in self.tools
         ]
+
+    async def call_tool(self, tool_name: str, arguments: Optional[Dict[str, Any]] = None) -> Any:
+        """Call a tool by name with optional arguments using the MCP session."""
+        if self.session is None:
+            raise RuntimeError("MCP session not initialized")
+        try:
+            result = await self.session.call_tool(tool_name, arguments or {})
+            return result
+        except Exception as e:
+            logger.error(f"Tool call failed ({tool_name}): {e}")
+            raise
 
     @property
     def is_connected(self) -> bool:

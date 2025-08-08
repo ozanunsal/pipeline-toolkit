@@ -15,8 +15,13 @@ dependencies = [
     "prompt-toolkit>=3.0.43",
     "python-dotenv>=1.0.0",
     "rich>=13.0.0",
+    "google-generativeai>=0.8.0",
 ]
 
 [project.scripts]
-pipeline-toolkit = "src.cli:cli_main"
-ptk = "src.cli:cli_main"
+pipeline-toolkit = "cli:cli_main"
+ptk = "cli:cli_main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["cli", "config", "mcp_client", "ai_agent"]

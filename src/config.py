@@ -102,6 +102,7 @@ class Config:
 
     mcp_servers: List[MCPServerConfig]
     log_file: Optional[str] = None
+    gemini: Optional[Dict[str, Any]] = None
 
     def __post_init__(self):
         """Validate main configuration."""
@@ -138,6 +139,7 @@ class Config:
                 for server in self.mcp_servers
             ],
             "log_file": self.log_file,
+            "gemini": self.gemini,
         }
         return config_dict
 
@@ -236,7 +238,8 @@ class EnhancedConfigLoader:
 
             return Config(
                 mcp_servers=mcp_servers,
-                log_file=config_dict.get("log_file")
+                log_file=config_dict.get("log_file"),
+                gemini=config_dict.get("gemini"),
             )
         except Exception as e:
             raise ConfigurationError(f"Failed to create configuration object: {e}")

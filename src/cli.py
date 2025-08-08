@@ -29,8 +29,10 @@ from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
 
-from src.config import Config, load_config
-from src.mcp_client import MCPClient
+from config import Config, load_config
+from mcp_client import MCPClient
+from ai_agent import GeminiAgent, GeminiConfig
+import re
 
 # Configure logging
 
@@ -141,8 +143,6 @@ class CLI:
 
     async def process_query(self, query: str):
         """Process a user query through the AI agent."""
-        # TODO: Check AI agent
-
         console.print(f"\n🤔 [bold]Processing query:[/bold] {query}")
         with Live(
             Spinner("dots", text="[blue]AI is thinking...", style="blue"),
@@ -150,9 +150,95 @@ class CLI:
             transient=True,
         ):
             try:
-                # TODO: Process the query with the AI agent
-                response = "This is a test response from the AI agent."
-                # Display the response in a nice panel
+                # Initialize Gemini agent if config allows
+                gem_cfg = None
+                if self.config and self.config.gemini and self.config.gemini.get("api_key"):
+                    gem_cfg = GeminiConfig(
+                        api_key=self.config.gemini["api_key"],
+                        model=self.config.gemini.get("model", "gemini-2.0-flash-exp"),
+                    )
+                agent = GeminiAgent(gem_cfg) if gem_cfg else None
+
+                def _extract_text_from_result(result: object) -> str:
+                    # Common MCP call_tool result patterns
+                    # Try attributes then dict-like fallbacks
+                    if result is None:
+                        return ""
+                    content = getattr(result, "content", None)
+                    if isinstance(content, list):
+                        parts = []
+                        for item in content:
+                            t = getattr(item, "text", None)
+                            if isinstance(t, str):
+                                parts.append(t)
+                            elif isinstance(item, dict) and isinstance(item.get("text"), str):
+                                parts.append(item["text"])
+                        if parts:
+                            return "\n".join(parts)
+                    if isinstance(content, str):
+                        return content
+                    if isinstance(result, dict):
+                        if isinstance(result.get("content"), str):
+                            return result["content"]
+                        if isinstance(result.get("message"), str):
+                            return result["message"]
+                    return str(result)
+
+                # Use planning if agent present, else fallback heuristic
+                tool_output_text = ""
+                if self.connected_clients:
+                    tools_by_server = [
+                        {"server": server_name, "tools": tools}
+                        for _, server_name, tools in self.connected_clients
+                    ]
+                    plan = {"server": None}
+                    if agent:
+                        plan = await agent.plan_tool_call(query, tools_by_server)
+                        # Update spinner to show chosen tool/server if available
+                        try:
+                            chosen_server = plan.get("server") or ""
+                            chosen_tool = str(plan.get("tool", ""))
+                            if chosen_server and chosen_tool:
+                                console.print(f"[cyan]Calling tool:[/cyan] {chosen_server} :: {chosen_tool}")
+                        except Exception:
+                            pass
+
+                    if plan.get("server"):
+                        # Find the chosen client and tool
+                        chosen_server = plan["server"].lower()
+                        chosen_tool = str(plan.get("tool", ""))
+                        call_args: Dict[str, Any] = plan.get("args", {}) if isinstance(plan.get("args"), dict) else {}
+                        for client, server_name, tools in self.connected_clients:
+                            if (server_name or "").lower() == chosen_server:
+                                try:
+                                    result = await client.call_tool(chosen_tool, call_args)
+                                    tool_output_text = _extract_text_from_result(result)
+                                except Exception:
+                                    tool_output_text = ""
+                                break
+                    # If planning failed or empty, try first available tool with empty args
+                    if not tool_output_text:
+                        for client, server_name, tools in self.connected_clients:
+                            for tool in tools:
+                                try:
+                                    result = await client.call_tool(tool.get("name", ""), {})
+                                    tool_output_text = _extract_text_from_result(result)
+                                    if tool_output_text:
+                                        break
+                                except Exception:
+                                    continue
+                            if tool_output_text:
+                                break
+
+                # If we have tool output, use it as the log_text for analysis; otherwise use user query
+                analysis_input = tool_output_text or query
+
+                if agent:
+                    response = await agent.analyze_failure_log(analysis_input)
+                else:
+                    # Fallback: just echo the input in a simple format
+                    response = f"Summary: {analysis_input[:200]}\nPossible Fixes: Review logs and configuration."
+
                 response_panel = Panel(
                     Markdown(response) if response else "No response generated",
                     title="🤖 AI Response",
