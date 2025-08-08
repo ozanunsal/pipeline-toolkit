@@ -1,0 +1,47 @@
+{
+  "log_file": "~/pipeline-toolkit.log",
+  "gemini": {
+    "api_key": "YOUR_GEMINI_API_KEY",
+    "model": "gemini-2.0-flash-exp"
+  },
+  "mcp_servers": [
+    {
+      "name": "Testing Farm MCP Server",
+      "connection_type": "sse",
+      "url": "http://localhost:8000",
+      "enabled": true,
+      "description": "SSE-based Testing Farm MCP server"
+    },
+    {
+      "name": "Errata MCP Server",
+      "connection_type": "stdio",
+      "command": "podman",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "MCP_TRANSPORT=stdio",
+        "localhost/errata-mcp:latest"
+      ],
+      "working_directory": "/abs/path/to/errata-mcp",
+      "enabled": false,
+      "description": "Errata operations MCP server"
+    },
+    {
+      "name": "Jira MCP Server",
+      "connection_type": "stdio",
+      "command": "podman",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "--env-file",
+        "~/.jira-mcp.env",
+        "localhost/jira-mcp:latest"
+      ],
+      "enabled": false,
+      "description": "Query Jira issues via MCP"
+    }
+  ]
+} 
