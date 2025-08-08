@@ -1,331 +1,231 @@
 # Pipeline Toolkit
 
-![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
-![License](https://img.shields.io/badge/License-MIT-green)
-![Status](https://img.shields.io/badge/Status-Alpha-orange)
+An interactive, Rich-powered CLI that connects to multiple MCP servers (SSE and stdio), plans tool calls using a Gemini AI agent, executes the chosen tool, and synthesizes helpful, structured answers.
 
-**Pipeline Toolkit** is an AI-powered MCP (Model Context Protocol) client that uses Google's Gemini AI to intelligently select and execute tools from any MCP server based on natural language queries.
+## Features
 
-## 🚀 Features
+- Multi-server MCP client (SSE and stdio transports)
+- Automatic tool planning via Gemini (google-generativeai)
+- Argument extraction from the user query (domain-agnostic: Testing Farm, Brew, Jira, Errata, etc.)
+- Pretty CLI with history, auto-complete, spinners and tables
+- Log file redirection (stdio stderr routed to file, truncated on restart)
+- Built-in commands:
+  - `list servers`, `list tools`
+  - `show logs`
+  - `clear`, `help`, `exit`/`quit`
 
-- **🧠 AI-Powered Tool Selection**: Uses Gemini AI to intelligently understand queries and select appropriate tools
-- **🔗 Universal MCP Client**: Works with any MCP server that implements the standard protocol
-- **📝 Natural Language Interface**: Ask questions in plain English and get intelligent responses
-- **🛠️ Dynamic Tool Discovery**: Automatically discovers and adapts to available tools from connected MCP servers
-- **📊 Comprehensive Logging**: File-based logging with on-demand log viewing
-- **⚡ Async Architecture**: Built with modern async/await patterns for optimal performance
-- **🎯 Professional CLI**: Beautiful, user-friendly command-line interface
-
-## 🏗️ Architecture
+## Project structure
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   User Query    │───▶│   AI Agent      │───▶│   MCP Client    │
-│ Natural Language│    │ (Gemini AI)     │    │ (MCP Protocol)  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                ▲                       ▲
-                                │                       │
-                                ▼                       ▼
-                       ┌─────────────────┐    ┌─────────────────┐
-                       │ Tool Selection  │    │   MCP Server    │
-                       │ & Execution     │    │ (e.g., BrewMCP) │
-                       └─────────────────┘    └─────────────────┘
+repo/
+  ├─ config/
+  │   ├─ config.json             # your active configuration
+  │   └─ config.json.example     # example configuration (copy to config.json)
+  ├─ logs/
+  │   └─ pipeline_bot.log        # log file (truncated on each start)
+  ├─ src/
+  │   ├─ ai_agent.py             # Gemini agent (planning + answer synthesis)
+  │   ├─ cli.py                  # Interactive CLI (entry module for scripts)
+  │   ├─ config.py               # Config loader & validation
+  │   └─ mcp_client.py           # MCP client for SSE & stdio
+  ├─ pyproject.toml              # packaging and entry points
+  └─ README.md
 ```
 
-The Pipeline Toolkit acts as an intelligent bridge between users and MCP servers:
+## Requirements
 
-1. **User Input**: Natural language queries from users
-2. **AI Processing**: Gemini AI analyzes the query and selects appropriate tools
-3. **Tool Execution**: Selected tools are executed on the target MCP server
-4. **Response Generation**: Results are formatted and returned to the user
+- Python 3.13+
+- MCP Python client (`mcp`)
+- Rich, prompt-toolkit
+- Google Generative AI (`google-generativeai`) for the Gemini agent
 
-## 📦 Installation
+## Installation
 
-### Prerequisites
-
-- Python 3.11 or higher
-- Google Gemini API key
-- Running MCP server (e.g., BrewMCP, JiraMCP, etc.)
-
-### Method 1: Using pip (Recommended)
+Install in editable mode:
 
 ```bash
-pip install pipeline-toolkit
+pip install -e .
+# or with uv
+uv pip install -e .
 ```
 
-### Method 2: From Source
+This installs the CLI commands:
+
+- `pipeline-toolkit`
+- `ptk`
+
+## Configuration
+
+Create `config/config.json` (or copy from the example below). The config supports:
+
+- `log_file` (optional): Absolute or `~` path to the log file. If not set, defaults to `logs/pipeline_bot.log`.
+- `gemini` (optional): API key and model for tool planning and answer generation.
+- `mcp_servers`: List of MCP server entries with either `sse` or `stdio` transport.
+
+### Example: `config/config.json.example`
+
+```json
+{
+  "log_file": "~/pipeline-toolkit.log",
+  "gemini": {
+    "api_key": "YOUR_GEMINI_API_KEY",
+    "model": "gemini-2.0-flash-exp"
+  },
+  "mcp_servers": [
+    {
+      "name": "Testing Farm MCP Server",
+      "connection_type": "sse",
+      "url": "http://localhost:8000",
+      "enabled": true,
+      "description": "SSE-based Testing Farm MCP server"
+    },
+    {
+      "name": "Errata MCP Server",
+      "connection_type": "stdio",
+      "command": "podman",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "MCP_TRANSPORT=stdio",
+        "localhost/errata-mcp:latest"
+      ],
+      "working_directory": "/abs/path/to/errata-mcp",
+      "enabled": false,
+      "description": "Errata operations MCP server"
+    },
+    {
+      "name": "Jira MCP Server",
+      "connection_type": "stdio",
+      "command": "podman",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "--env-file",
+        "~/.jira-mcp.env",
+        "localhost/jira-mcp:latest"
+      ],
+      "enabled": false,
+      "description": "Query Jira issues via MCP"
+    },
+    {
+      "name": "Brew MCP Server",
+      "connection_type": "stdio",
+      "command": "python",
+      "args": ["-m", "brew_mcp_server"],
+      "enabled": false,
+      "description": "Query Brew tags/builds"
+    }
+  ]
+}
+```
+
+Notes:
+- `~` and `$VARS` in `command`, `args`, and `working_directory` are expanded automatically.
+- For containerized stdio servers, ensure images are available locally, and use absolute paths for `--env-file`.
+
+## Usage
+
+Start the CLI:
 
 ```bash
-git clone https://github.com/your-org/pipeline-toolkit.git
-cd pipeline-toolkit
+pipeline-toolkit
+# or
+ptk
+```
+
+Example queries:
+
+- Information requests:
+  - "List latest Errata products"
+  - "Is build abc-1.2.3 in brew tag rhel-9.4.0-candidate?"
+  - "Get the latest pipeline run for project X"
+
+- Failure analysis:
+  - "Analyze why job 123e4567-e89b-12d3-a456-426614174000 failed in testing-farm"
+  - "Investigate Jenkins pipeline error from this log: <paste log>"
+
+Built-in commands:
+
+- `list servers` – show connected MCP servers
+- `list tools` – show tools discovered from servers
+- `show logs` – display the current log file in the console
+- `clear`, `help`, `exit`/`quit`
+
+While processing, the CLI shows the chosen server/tool (when planned by the agent):
+
+```
+Calling tool: <Server Name> :: <tool_name>
+```
+
+## Logging
+
+- The log file is truncated on each start.
+- Default path: `logs/pipeline_bot.log` (created automatically). Override with:
+  - `log_file` in `config.json`, or
+  - `PIPELINE_TOOLKIT_LOG_DIR` environment variable (directory containing the default file name).
+- Stdio server stderr is redirected to the log file, not to the terminal.
+
+## Troubleshooting
+
+- "No module named 'src'": ensure editable install (`pip install -e .`). Entry points expect modules to be discovered under `src/` via `tool.setuptools.package-dir`.
+- Stdio server does not start:
+  - Verify `command` exists and images are available (`podman run ...`).
+  - Use absolute paths for `--env-file` and `working_directory`.
+  - Check `logs/pipeline_bot.log` for errors.
+- Agent not planning tools:
+  - Ensure `gemini.api_key` is present.
+  - Verify servers expose tools (via `list tools`).
+
+## Development
+
+Reinstall after changes:
+
+```bash
 pip install -e .
 ```
 
-## 🔧 Configuration
-
-### Environment Variables
-
-Create a `.env` file in your project root:
-
-```env
-# Required
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# Optional (with defaults)
-GEMINI_MODEL=gemini-2.0-flash-exp
-MCP_SERVER_URL=http://localhost:8080
-MCP_SERVER_NAME=My MCP Server
-MCP_SERVER_ENDPOINT=/sse
-LOG_LEVEL=INFO
-```
-
-### Configuration File
-
-Generate a sample configuration:
+Build (uv):
 
 ```bash
-python -m src.config
+uv build
 ```
 
-This creates a `.env.example` file that you can customize.
+## Architecture
 
-## 🚀 Usage
+```mermaid
+flowchart LR
+  U["User"] -->|queries & commands| CLI["Interactive CLI (Rich + prompt-toolkit)"]
+  CLI --> CFG["Config Loader (config.json)"]
+  CLI --> AI["GeminiAgent (planning + answer synthesis)"]
+  CLI --> MCP["MCP Client (SSE / stdio)"]
 
-### Interactive Mode
+  subgraph Servers
+    SSE["SSE Server(s)"]
+    STDIO["stdio Server(s)"]
+  end
 
-Start the interactive CLI:
+  MCP -->|discover tools| CLI
+  MCP -->|SSE| SSE
+  MCP -->|stdio| STDIO
 
-```bash
-pipeline-bot
+  AI <-->|tools inventory| CLI
+  AI -->|plan server/tool/args| CLI
+  CLI -->|call_tool server/tool/args| MCP
+  MCP -->|tool result| CLI
+  AI -->|final answer| CLI
+  CLI -->|render answer| U
+
+  subgraph Logging
+    LOG[("Log File<br/>logs/pipeline_bot.log or config.log_file")]
+  end
+
+  CLI --> LOG
+  STDIO -. "stderr" .-> LOG
 ```
 
-Or if installed from source:
-
-```bash
-python src/cli.py
-```
-
-### Command Line Mode
-
-Execute a single query:
-
-```bash
-pipeline-bot --query "Get tag info for release-1.0"
-```
-
-### Example Queries
-
-Once connected to an MCP server, you can ask natural language questions:
-
-```bash
-🔍 Enter your query: Get tag info for release-1.0
-🔍 Enter your query: List all builds in the main-branch tag
-🔍 Enter your query: Show me packages containing 'kernel'
-🔍 Enter your query: What is the latest version of package-name?
-```
-
-### Special Commands
-
-- `help` - Show available commands
-- `tools` - List all available tools from connected MCP servers
-- `stats` - Show agent statistics
-- `show me the logs` - View recent log entries
-- `exit` or `quit` - Exit the application
-
-## 🛠️ Development
-
-### Project Structure
-
-```
-pipeline-toolkit/
-├── src/
-│   ├── __init__.py          # Package initialization
-│   ├── ai_agent.py          # Gemini AI integration
-│   ├── mcp_client.py        # MCP protocol client
-│   ├── cli.py               # Command-line interface
-│   ├── config.py            # Configuration management
-│   └── exceptions.py        # Custom exceptions
-├── config/                  # Configuration files
-│   ├── config.json          # Main configuration
-│   ├── config.json.example  # Example configuration
-│   └── README.md           # Configuration guide
-├── logs/                    # Log files
-├── pyproject.toml          # Project configuration
-├── requirements.txt        # Dependencies
-└── README.md               # This file
-```
-
-### Setting Up Development Environment
-
-```bash
-# Clone the repository
-git clone https://github.com/your-org/pipeline-toolkit.git
-cd pipeline-toolkit
-
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install in development mode
-pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Format code
-black src/
-isort src/
-
-# Type checking
-mypy src/
-```
-
-### Adding New Features
-
-1. **New MCP Servers**: The toolkit automatically adapts to any MCP server
-2. **Custom Tools**: Add new tools by implementing them in your MCP server
-3. **AI Models**: Modify `src/ai_agent.py` to use different AI models
-4. **Extensions**: Use the modular architecture to add new functionality
-
-## 📚 API Reference
-
-### AIAgent Class
-
-```python
-from src import AIAgent
-
-agent = AIAgent(model="gemini-2.0-flash-exp")
-result = await agent.process_query("Your query here")
-```
-
-### MCPClient Class
-
-```python
-from src import MCPClient, MCPServerConfig
-
-config = MCPServerConfig(
-    name="My Server",
-    url="http://localhost:8080"
-)
-
-async with MCPClient(config) as client:
-    tools = await client.list_tools()
-    result = await client.call_tool("tool_name", param="value")
-```
-
-## 🔍 How It Works
-
-### Tool Discovery
-
-1. **Connection**: Pipeline Toolkit connects to your MCP server
-2. **Discovery**: Automatically discovers available tools and their schemas
-3. **Conversion**: Converts MCP tool schemas to Gemini AI function declarations
-4. **Registration**: Registers tools with the AI agent for intelligent selection
-
-### Query Processing
-
-1. **Input**: User provides natural language query
-2. **Analysis**: Gemini AI analyzes the query and intent
-3. **Selection**: AI selects appropriate tools based on query content
-4. **Execution**: Selected tools are executed with extracted parameters
-5. **Response**: Results are formatted and returned to user
-
-### Parameter Extraction
-
-The AI agent intelligently extracts parameters from natural language:
-
-- **"Get tag info for release-1.0"** → `get_brew_tag_info(tag_name="release-1.0")`
-- **"List builds in main-branch"** → `list_brew_builds(tag_name="main-branch")`
-- **"Show package with ID 123"** → `get_package_info(package_id=123)`
-
-## 🧪 Testing
-
-### Unit Tests
-
-```bash
-pytest tests/
-```
-
-### Integration Tests
-
-```bash
-pytest tests/integration/
-```
-
-### Manual Testing
-
-1. Start an MCP server (e.g., BrewMCP)
-2. Set your environment variables
-3. Run the Pipeline Toolkit
-4. Test various queries
-
-## 📊 Logging
-
-All operations are logged to `logs/pipeline_bot.log` by default. View logs:
-
-```bash
-# In interactive mode
-🔍 Enter your query: show me the logs
-
-# Or directly
-tail -f logs/pipeline_bot.log
-```
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-1. **"Gemini API key not found"**
-   - Set `GEMINI_API_KEY` environment variable
-   - Ensure the key is valid and has appropriate permissions
-
-2. **"Failed to connect to MCP server"**
-   - Verify MCP server is running
-   - Check `MCP_SERVER_URL` configuration
-   - Ensure server supports SSE transport
-
-3. **"No tools available"**
-   - Verify MCP server is properly configured
-   - Check server logs for errors
-   - Ensure tools are properly registered in the MCP server
-
-### Debug Mode
-
-Enable debug logging:
-
-```bash
-LOG_LEVEL=DEBUG pipeline-bot
-```
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### Development Workflow
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Run the test suite
-6. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **Google Gemini AI**: For providing the intelligent query processing capabilities
-- **MCP Protocol**: For the standardized server communication protocol
-- **Python Community**: For the excellent asyncio and typing support
-
-## 📞 Support
-
-- **Documentation**: [GitHub Wiki](https://github.com/your-org/pipeline-toolkit/wiki)
-- **Issues**: [GitHub Issues](https://github.com/your-org/pipeline-toolkit/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/pipeline-toolkit/discussions)
-
----
-
-**Pipeline Toolkit** - Making MCP servers accessible through natural language! 🚀
+- The CLI loads configuration, connects to MCP servers, lists tools, and orchestrates calls.
+- The Gemini agent plans which tool to call and generates the final answer from tool output.
+- stdio server stderr is redirected to the log file; logs are truncated on each start.

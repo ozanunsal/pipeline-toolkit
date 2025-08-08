@@ -1,461 +1,150 @@
-"""
-AI Agent - Professional Gemini AI integration for MCP tool selection and execution.
-
-This module provides an AI agent that uses Google's Gemini AI to intelligently select
-and execute tools from MCP servers based on natural language queries.
-"""
-
+import asyncio
 import logging
-import os
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
+import json
+import re
 
-import nest_asyncio
-from google import genai
-from google.genai import types
+import google.generativeai as genai
+from rich.console import Console
 
-from src.exceptions import GeminiError, ToolExecutionError
-from src.mcp_client import MCPClient
+PROMPT_TEMPLATE = """You are an expert CI and release engineering assistant.
+You can: analyze failures, reason about logs, and answer general information requests by
+invoking MCP tools (whose outputs are provided to you) and synthesizing helpful answers.
 
-# Configure logging
-log_file = os.path.join(os.path.dirname(__file__), '..', '..', 'logs', 'pipeline_bot.log')
-os.makedirs(os.path.dirname(log_file), exist_ok=True)
+INSTRUCTIONS:
+- Read the user's request and the tool output (if any).
+- If there is a failure or error content, analyze cause and provide fixes.
+- Otherwise, produce a complete and direct answer for the user's information request.
+- Be precise, avoid speculation, and prefer concrete, actionable guidance.
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.FileHandler(log_file, mode='a')]
-)
+OUTPUT FORMAT:
+- If analyzing errors/failures:
+  Summary: <1–2 sentence high-level failure summary>
+  Likely Cause(s): <concise cause(s) based on evidence>
+  Suggested Fixes: <up to 3 actionable steps>
+  Evidence: <short quotes or key lines from the tool output>
+
+- Otherwise (information request):
+  Answer: <direct, precise answer>
+  Details: <supporting details, data or steps>
+  Notes: <optional clarifications, caveats>
+
+User Request:
+{user_query}
+
+Tool Output:
+{tool_text}
+
+Your response:"""
 
 logger = logging.getLogger(__name__)
-nest_asyncio.apply()
+console = Console()
 
 
-class AIAgent:
-    """
-    AI Agent for intelligent tool selection and execution using Gemini AI.
+@dataclass
+class GeminiConfig:
+    api_key: str
+    model: str = "gemini-2.0-flash-exp"
 
-    This agent provides a natural language interface to MCP tools by:
-    1. Converting MCP tool schemas to Gemini function declarations
-    2. Processing natural language queries with Gemini AI
-    3. Intelligently selecting and calling appropriate tools
-    4. Returning formatted results
 
-    Features:
-        - Automatic tool schema conversion
-        - Natural language query processing
-        - Intelligent parameter extraction
-        - Multi-server tool management
-        - Comprehensive error handling
+class GeminiAgent:
+    def __init__(self, config: GeminiConfig):
+        genai.configure(api_key=config.api_key)
+        self.model = genai.GenerativeModel(config.model)
+        self.gemini_config = config
 
-    Example:
-        >>> agent = AIAgent()
-        >>> agent.register_mcp_client(client, "MyServer", tools)
-        >>> result = await agent.process_query("Get tag info for release-1.0")
-    """
-
-    def __init__(self, model: str = "gemini-2.0-flash-exp", api_key: Optional[str] = None) -> None:
-        """
-        Initialize the AI Agent with Gemini AI.
-
-        Args:
-            model: Gemini model to use for processing
-            api_key: Optional Gemini API key (will use env vars if not provided)
-        """
-        self.model = model
-        self.api_key = api_key
-        self.ai_agent: Optional[genai.Client] = None
-        self.functions: List[types.FunctionDeclaration] = []
-        self.mcp_clients: Dict[str, MCPClient] = {}
-        self.tool_to_client: Dict[str, MCPClient] = {}
-        self.initialized = False
-
-        self._setup_gemini()
-
-    def _setup_gemini(self) -> None:
-        """Initialize and configure the Gemini AI client."""
+    async def generate_answer(self, user_query: str, tool_text: str) -> str:
+        prompt = PROMPT_TEMPLATE.format(user_query=user_query, tool_text=tool_text)
         try:
-            # Use provided API key or fall back to environment variables
-            api_key = self.api_key or os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
-            if not api_key:
-                raise GeminiError("Gemini API key is not set. Provide it via constructor or environment variables.")
+            def _generate():
+                return self.model.generate_content(prompt)
 
-            self.ai_agent = genai.Client(api_key=api_key)
-            self.initialized = True
-            logger.info(f"Gemini AI client initialized with model: {self.model}")
-
+            resp = await asyncio.get_event_loop().run_in_executor(None, _generate)
+            return getattr(resp, "text", "") or ""
         except Exception as e:
-            raise GeminiError(f"Failed to initialize Gemini AI client: {e}")
+            logger.error(f"Gemini generation failed: {e}")
+            return ""
 
-    def register_mcp_client(self, client: MCPClient, server_name: str, tools: List[Dict[str, Any]]) -> None:
-        """
-        Register an MCP client with its tools for tool execution.
+    async def analyze_failure_log(self, log_text: str) -> str:
+        # Backward compatibility: route to the generalized generator
+        return await self.generate_answer("Analyze the following error log and provide causes and fixes.", log_text)
 
-        Args:
-            client: MCP client instance
-            server_name: Name of the MCP server
-            tools: List of tools from this server
-        """
-        self.mcp_clients[server_name] = client
+    async def answer_query(
+        self,
+        query: str,
+        connected_clients: List[Tuple[Any, str, List[Dict[str, Any]]]],
+    ):
+        # Simple heuristic kept for compatibility if needed in future
+        relevant_text = query
 
-        # Map each tool to its client for routing
-        for tool in tools:
-            tool_name = None
-            if isinstance(tool, dict) and 'name' in tool:
-                tool_name = tool['name']
-            elif hasattr(tool, 'name'):
-                tool_name = getattr(tool, 'name')
-
-            if tool_name:
-                self.tool_to_client[tool_name] = client
-
-        logger.info(f"Registered MCP client {server_name} with {len(tools)} tools")
-
-    def convert_tools_to_gemini_functions(self, tools: List[Dict[str, Any]]) -> None:
-        """
-        Convert MCP tools to Gemini function declarations.
-
-        Args:
-            tools: List of tool definitions from MCP server
-        """
-        for tool in tools:
+        for client, server_name, tools in connected_clients:
             try:
-                # Extract tool information
-                tool_name = self._extract_tool_name(tool)
-                tool_description = self._extract_tool_description(tool)
-                input_schema = self._extract_input_schema(tool)
-
-                # Create Gemini function declaration
-                function_declaration = self._create_function_declaration(
-                    tool_name, tool_description, input_schema
-                )
-
-                self.functions.append(function_declaration)
-                logger.info(f"Converted tool '{tool_name}' to Gemini function")
-
-            except Exception as e:
-                logger.warning(f"Failed to convert tool {tool} to Gemini function: {e}")
+                for tool in tools:
+                    name = tool.get("name", "").lower()
+                    if any(k in name for k in ["analy", "log", "fail"]):
+                        pass
+            except Exception:
                 continue
 
-    def _extract_tool_name(self, tool: Dict[str, Any]) -> str:
-        """Extract tool name from tool definition."""
-        if isinstance(tool, dict):
-            return tool.get("name", str(tool))
-        elif hasattr(tool, "name"):
-            return getattr(tool, "name")
-        return str(tool)
+        return await self.generate_answer(query, relevant_text)
 
-    def _extract_tool_description(self, tool: Dict[str, Any]) -> str:
-        """Extract tool description from tool definition."""
-        if isinstance(tool, dict):
-            return tool.get("description", "No description")
-        elif hasattr(tool, "description"):
-            return getattr(tool, "description", "No description")
-        return "No description"
+    async def plan_tool_call(
+        self,
+        query: str,
+        tools_by_server: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Plan which server/tool to call and with what arguments.
 
-    def _extract_input_schema(self, tool: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract input schema from tool definition."""
-        if isinstance(tool, dict):
-            return tool.get("inputSchema", {})
-        elif hasattr(tool, "inputSchema"):
-            return getattr(tool, "inputSchema", {})
-        return {}
-
-    def _create_function_declaration(
-        self, tool_name: str, description: str, input_schema: Dict[str, Any]
-    ) -> types.FunctionDeclaration:
-        """Create a Gemini function declaration from tool information."""
-        properties = input_schema.get("properties", {})
-        required = input_schema.get("required", [])
-
-        # Convert properties to Gemini format
-        gemini_properties = {}
-        for key, prop in properties.items():
-            prop_type = self._map_type_to_gemini(prop.get("type", "string"))
-            gemini_properties[key] = types.Schema(
-                type=prop_type,
-                description=prop.get("description", f"Parameter: {key}")
-            )
-
-        # Enhance description with parameter information
-        if properties:
-            param_descriptions = [
-                f"{name}: {prop.get('description', f'Parameter {name}')}"
-                for name, prop in properties.items()
-            ]
-            description = f"{description}\n\nParameters:\n" + "\n".join(f"- {desc}" for desc in param_descriptions)
-
-        return types.FunctionDeclaration(
-            name=tool_name,
-            description=description,
-            parameters=types.Schema(
-                type="OBJECT",
-                properties=gemini_properties,
-                required=required
-            )
+        Returns a dict like: {"server": str, "tool": str, "args": {..}} or {"server": null} if none.
+        """
+        system_prompt = (
+            "You are a tool planner. Given the user request and available MCP servers and their tools, "
+            "choose EXACTLY ONE best tool to answer the request, and construct its arguments from the user text. "
+            "If required inputs are missing, infer them from the query when possible. If truly missing, set them to null.\n\n"
+            "Return ONLY a strict JSON object with keys: server, tool, args. No markdown, no text outside JSON."
         )
 
-    def _map_type_to_gemini(self, mcp_type: str) -> str:
-        """Map MCP parameter types to Gemini types."""
-        type_mapping = {
-            "string": "STRING",
-            "str": "STRING",
-            "integer": "INTEGER",
-            "int": "INTEGER",
-            "boolean": "BOOLEAN",
-            "bool": "BOOLEAN",
-            "number": "NUMBER",
-            "float": "NUMBER",
-            "array": "ARRAY",
-            "object": "OBJECT",
-        }
-        return type_mapping.get(mcp_type.lower(), "STRING")
+        inventory = []
+        for server in tools_by_server:
+            server_name = server.get("server") or ""
+            compact_tools = []
+            for t in server.get("tools", []):
+                name = t.get("name", "")
+                schema = t.get("inputSchema") or {}
+                props = {}
+                required = []
+                if isinstance(schema, dict):
+                    required = schema.get("required") or []
+                    if isinstance(schema.get("properties"), dict):
+                        props = {k: (v.get("type") if isinstance(v, dict) else None) for k, v in schema["properties"].items()}
+                compact_tools.append({"name": name, "required": required, "properties": props})
+            inventory.append({"server": server_name, "tools": compact_tools})
 
-    async def process_query(self, query: str, context: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Process a natural language query using Gemini AI and available tools.
+        plan_prompt = (
+            f"User Request:\n{query}\n\n"
+            f"Available Servers and Tools (JSON):\n{json.dumps(inventory, ensure_ascii=False)}\n\n"
+            "Respond with JSON only, e.g.: {\"server\": \"My Server\", \"tool\": \"analyze_job\", \"args\": {\"job_id\": \"...\"}}"
+        )
 
-        Args:
-            query: Natural language query from user
-            context: Optional context to help with processing
-
-        Returns:
-            Dict containing response and any tool results
-        """
-        if not self.initialized:
-            return {
-                "success": False,
-                "error": "Gemini AI not initialized. Please check your API key.",
-                "query": query
-            }
+        def _generate_plan():
+            return self.model.generate_content([system_prompt, plan_prompt])
 
         try:
-            # Build system instruction
-            system_instruction = self._build_system_instruction(context)
-
-            # Prepare tools for Gemini
-            tools = [types.Tool(function_declarations=self.functions)] if self.functions else None
-
-            # Generate content with Gemini
-            response = await self._call_gemini(query, system_instruction, tools)
-
-            # Parse response and execute tools
-            return await self._process_gemini_response(response, query, system_instruction, tools)
-
+            resp = await asyncio.get_event_loop().run_in_executor(None, _generate_plan)
+            text = getattr(resp, "text", "") or ""
+            m = re.search(r"\{[\s\S]*\}", text)
+            if not m:
+                return {"server": None}
+            obj = json.loads(m.group(0))
+            if not isinstance(obj, dict):
+                return {"server": None}
+            srv = obj.get("server")
+            tool = obj.get("tool")
+            args = obj.get("args") if isinstance(obj.get("args"), dict) else {}
+            if not srv or not tool:
+                return {"server": None}
+            return {"server": str(srv), "tool": str(tool), "args": args}
         except Exception as e:
-            logger.error(f"Error processing query: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "query": query
-            }
-
-    def _build_system_instruction(self, context: Optional[str] = None) -> str:
-        """Build system instruction for Gemini AI."""
-        instruction = """You are an AI assistant that helps users interact with MCP servers through their tools.
-        You can call the available functions to get information and answer user questions.
-
-        When a user asks a question, analyze what they want and either:
-        1. Call the appropriate tool(s) with the correct parameters extracted from their query
-        2. Provide a direct answer if no tools are needed
-
-        CRITICAL: When calling tools, you MUST extract the required parameters from the user's query:
-        - Carefully read the tool descriptions and parameter requirements
-        - Look for values in the user's query that match the parameter names and types
-        - Extract identifiers, names, IDs, or other values mentioned in the query
-        - Map these values to the correct parameter names as defined in the tool schema
-        - If a required parameter is not clearly stated in the query, ask the user for clarification
-        - Always provide the parameters as key-value pairs in the function call
-
-        IMPORTANT: For build/package queries, use the available tools creatively:
-        - If someone asks about a specific package build in a tag, use list_brew_builds with the tag name
-        - If someone asks about packages in a tag, use list_brew_packages with the tag name
-        - If someone asks about tag information, use get_brew_tag_info with the tag name
-        - The tools return lists that you can analyze to find specific items the user is looking for
-
-        NOTE: Log requests are handled separately by the system - you don't need to handle "show me the logs" requests.
-
-        Examples of parameter extraction:
-        - "get info for tag ABC" → get_brew_tag_info with tag_name="ABC"
-        - "show me package XYZ" → list_brew_packages with tag_name="relevant_tag"
-        - "what is the kernel-automotive build in tag ABC?" → list_brew_builds with tag_name="ABC" (then find kernel-automotive in results)
-        - "ID is 123" → extract id="123"
-
-        Be helpful and provide clear responses based on the tool results or your knowledge."""
-
-        if context:
-            instruction += f"\n\nContext: {context}"
-
-        return instruction
-
-    async def _call_gemini(self, query: str, system_instruction: str, tools: Optional[List[types.Tool]]) -> Any:
-        """Call Gemini AI with query and tools."""
-        try:
-            return self.ai_agent.models.generate_content(
-                model=self.model,
-                contents=[query],
-                config=types.GenerateContentConfig(
-                    tools=tools,
-                    system_instruction=system_instruction,
-                    temperature=0.1
-                )
-            )
-        except Exception as e:
-            raise GeminiError(f"Gemini API call failed: {e}")
-
-    async def _process_gemini_response(
-        self, response: Any, query: str, system_instruction: str, tools: Optional[List[types.Tool]]
-    ) -> Dict[str, Any]:
-        """Process Gemini response and execute any function calls."""
-        function_calls = []
-        final_response = ""
-
-        # Parse response
-        if hasattr(response, 'candidates') and response.candidates:
-            candidate = response.candidates[0]
-            if hasattr(candidate, 'content') and candidate.content:
-                if hasattr(candidate.content, 'parts') and candidate.content.parts:
-                    for part in candidate.content.parts:
-                        if hasattr(part, 'text') and part.text:
-                            final_response += part.text
-                        if hasattr(part, 'function_call') and part.function_call:
-                            func_call = part.function_call
-                            args = dict(func_call.args) if hasattr(func_call, 'args') and func_call.args else {}
-                            function_calls.append({"name": func_call.name, "args": args})
-
-        # Execute function calls
-        function_results = []
-        if function_calls:
-            for func_call in function_calls:
-                logger.info(f"Calling tool: {func_call['name']} with args: {func_call['args']}")
-                tool_result = await self.call_tool(func_call["name"], **func_call["args"])
-                function_results.append({
-                    "function_call": func_call,
-                    "result": tool_result
-                })
-
-                # Get final response from Gemini if needed
-                if tool_result.get("success") and tool_result.get("content") and not final_response:
-                    final_response = await self._get_final_response(
-                        query, func_call, tool_result, system_instruction, tools
-                    )
-
-        # Set default response if needed
-        if not function_calls and not final_response:
-            final_response = "I couldn't determine how to answer your question. Please try being more specific."
-
-        return {
-            "success": True,
-            "query": query,
-            "gemini_response": final_response,
-            "function_calls": function_calls,
-            "function_results": function_results,
-            "tools_available": len(self.functions)
-        }
-
-    async def _get_final_response(
-        self, query: str, func_call: Dict[str, Any], tool_result: Dict[str, Any],
-        system_instruction: str, tools: Optional[List[types.Tool]]
-    ) -> str:
-        """Get final response from Gemini after tool execution."""
-        try:
-            content_text = str(tool_result.get("content", [{}])[0].get("text", ""))
-            function_response_content = [
-                query,
-                types.Part.from_function_response(
-                    name=func_call["name"],
-                    response={"result": content_text}
-                )
-            ]
-
-            final_model_response = self.ai_agent.models.generate_content(
-                model=self.model,
-                contents=function_response_content,
-                config=types.GenerateContentConfig(
-                    tools=tools,
-                    system_instruction=system_instruction,
-                    temperature=0.1
-                )
-            )
-
-            response_text = ""
-            if hasattr(final_model_response, 'candidates') and final_model_response.candidates:
-                candidate = final_model_response.candidates[0]
-                if hasattr(candidate, 'content') and candidate.content:
-                    if hasattr(candidate.content, 'parts') and candidate.content.parts:
-                        for part in candidate.content.parts:
-                            if hasattr(part, 'text') and part.text:
-                                response_text += part.text
-
-            return response_text
-
-        except Exception as e:
-            logger.error(f"Error getting final response from Gemini: {e}")
-            return f"Tool result: {content_text}"
-
-    async def call_tool(self, tool_name: str, **kwargs) -> Dict[str, Any]:
-        """
-        Call a tool on the appropriate MCP server.
-
-        Args:
-            tool_name: Name of the tool to call
-            **kwargs: Parameters to pass to the tool
-
-        Returns:
-            Dict containing the tool result
-        """
-        try:
-            # Find the MCP client for this tool
-            client = self.tool_to_client.get(tool_name)
-            if not client:
-                return {
-                    "success": False,
-                    "error": f"No MCP client found for tool: {tool_name}",
-                    "content": []
-                }
-
-            # Call the tool on the MCP client
-            result = await client.call_tool(tool_name, **kwargs)
-
-            return {
-                "success": True,
-                "content": [{"text": str(result)}],
-                "tool_name": tool_name
-            }
-
-        except Exception as e:
-            logger.error(f"Error calling tool {tool_name}: {e}")
-            return {
-                "success": False,
-                "error": f"Error calling tool {tool_name}: {str(e)}",
-                "content": []
-            }
-
-    @property
-    def is_initialized(self) -> bool:
-        """Check if Gemini AI is initialized."""
-        return self.initialized
-
-    def get_available_tools(self) -> List[Dict[str, Any]]:
-        """Get list of available tools."""
-        return [
-            {
-                "name": func.name,
-                "description": func.description,
-                "server": next(
-                    (server for server, client in self.mcp_clients.items()
-                     if client == self.tool_to_client.get(func.name)),
-                    "unknown"
-                )
-            }
-            for func in self.functions
-        ]
-
-    def get_stats(self) -> Dict[str, Any]:
-        """Get agent statistics."""
-        return {
-            "initialized": self.initialized,
-            "model": self.model,
-            "servers_connected": len(self.mcp_clients),
-            "tools_available": len(self.functions),
-            "servers": list(self.mcp_clients.keys())
-        }
+            logger.error(f"Gemini planning failed: {e}")
+            return {"server": None} 

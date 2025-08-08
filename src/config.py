@@ -1,208 +1,254 @@
 """
-Configuration management for Pipeline Toolkit.
+Enhanced Configuration Management - Advanced Configuration Loading and Validation.
 
-This module provides centralized configuration management with support for
-JSON configuration files, environment variables, default values, and validation.
+This module provides robust configuration management with comprehensive validation,
+environment variable support, schema validation, and intelligent defaults.
 """
 
 import json
+import logging
 import os
-from dataclasses import dataclass, field
+import re
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-
-@dataclass
-class GeminiConfig:
-    """Gemini AI configuration."""
-    api_key: str
-    model: str = "gemini-2.0-flash-exp"
-    temperature: float = 0.1
-    timeout: int = 30
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class MCPServerConfig:
-    """MCP Server configuration."""
+    """Enhanced MCP Server Configuration with support for sse and stdio connections."""
+
     name: str
-    url: str
-    endpoint: str = "/sse"
-    timeout: int = 30
-    max_retries: int = 3
-    enabled: bool = True
+    connection_type: str = "sse"
+    enabled: bool = False
     description: str = ""
 
+    # SSE connection settings
+    url: Optional[str] = None
+    endpoint: str = "/sse"
 
-@dataclass
-class LoggingConfig:
-    """Logging configuration."""
-    level: str = "INFO"
-    file: str = "logs/pipeline_bot.log"
-    max_log_lines: int = 1000
+    # stdio connection settings
+    command: Optional[str] = None
+    args: Optional[List[str]] = None
+    working_directory: Optional[str] = None
+    environment: Optional[Dict[str, str]] = None
 
+    def __post_init__(self):
+        """Validate MCP server configuration based on connection type."""
+        if not self.name or not self.name.strip():
+            raise ValueError("MCP server name is required.")
 
-@dataclass
-class UIConfig:
-    """UI configuration."""
-    show_banner: bool = True
-    show_tool_preview: bool = True
-    max_tools_preview: int = 5
+        if self.connection_type not in ["sse", "stdio"]:
+            raise ValueError(
+                f"Connection type must be either 'sse' or 'stdio', got: {self.connection_type}"
+            )
+
+        # Validate based on connection type
+        if self.connection_type == "sse":
+            self._validate_sse_connection()
+        elif self.connection_type == "stdio":
+            self._validate_stdio_connection()
+
+    def _validate_sse_connection(self):
+        """Validate SSE connection settings."""
+        if not self.url or not self.url.strip():
+            raise ValueError("Server URL is required for SSE connections.")
+        if not self._is_valid_url(self.url):
+            raise ValueError(f"Invalid URL format: {self.url}")
+
+    def _validate_stdio_connection(self):
+        """Validate stdio connection settings."""
+        if not self.command or not self.command.strip():
+            raise ValueError("Command is required for stdio connections.")
+        if self.working_directory and not Path(self.working_directory).exists():
+            logger.warning(f"Working directory does not exist: {self.working_directory}")
+        if self.args is not None and not isinstance(self.args, list):
+            raise ValueError("Args must be a list of strings.")
+        if self.environment is not None and not isinstance(self.environment, dict):
+            raise ValueError("Environment must be a dictionary of string ket-value pairs")
+        # Normalize args to list of strings
+        if self.args is None:
+            self.args = []
+        else:
+            self.args = [str(a) for a in self.args]
+
+    def _is_valid_url(self, url: str) -> bool:
+        """Check if URL is valid."""
+        url_pattern = re.compile(
+            r"^https?://"  # http:// or https://
+            r"(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|"  # domain...
+            r"localhost|"  # localhost...
+            r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"  # ...or ip
+            r"(?::\d+)?"  # optional port
+            r"(?:/?|[/?]\S+)$",
+            re.IGNORECASE,
+        )
+        return bool(url_pattern.match(url))
+
+    def is_sse_connection(self) -> bool:
+        """Check if this is an SSE connection."""
+        return self.connection_type == "sse"
+
+    def is_stdio_connection(self) -> bool:
+        """Check if this is a stdio connection."""
+        return self.connection_type == "stdio"
 
 
 @dataclass
 class Config:
-    """Main configuration class for Pipeline Toolkit."""
-    gemini: GeminiConfig
+    """Enhanced main configuration class for Pipeline Toolkit."""
+
     mcp_servers: List[MCPServerConfig]
-    logging: LoggingConfig
-    ui: UIConfig
+    log_file: Optional[str] = None
+    gemini: Optional[Dict[str, Any]] = None
+
+    def __post_init__(self):
+        """Validate main configuration."""
+        if not self.mcp_servers:
+            raise ValueError("At least one MCP server must be configured.")
+        enabled_servers = [server for server in self.mcp_servers if server.enabled]
+        if not enabled_servers:
+            raise ValueError("No enabled MCP servers found in configuration.")
+
+    def get_enabled_servers(self) -> List[MCPServerConfig]:
+        """Get all enabled MCP servers."""
+        return [server for server in self.mcp_servers if server.enabled]
+
+    def get_server_by_name(self, name: str) -> Optional[MCPServerConfig]:
+        """Get server configuration by name."""
+        for server in self.mcp_servers:
+            if server.name == name:
+                return server
+        return None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert configuration to dictionary."""
+        config_dict = {
+            "mcp_servers": [
+                {
+                    "name": server.name,
+                    "enabled": server.enabled,
+                    "description": server.description,
+                    "connection_type": server.connection_type,
+                    "url": server.url,
+                    "endpoint": server.endpoint,
+                    "command": server.command,
+                }
+                for server in self.mcp_servers
+            ],
+            "log_file": self.log_file,
+            "gemini": self.gemini,
+        }
+        return config_dict
+
+    def validate(self) -> List[str]:
+        """Comprehensive validation of the configuration."""
+        issues = []
+
+        # Validate MCP servers
+        server_names = [s.name for s in self.mcp_servers]
+        if len(server_names) != len(set(server_names)):
+            issues.append("Duplicate server names found")
+
+        for server in self.mcp_servers:
+            if server.enabled and server.is_sse_connection():
+                if not server.url or not server.url.startswith(("http", "https")):
+                    issues.append(
+                        f"Server {server.name} URL should start with http:// or https://"
+                    )
+        return issues
 
 
-class ConfigLoader:
-    """Configuration loader with JSON support and environment variable overrides."""
+class ConfigurationError(Exception):
+    """Exception raised for configuration errors."""
 
-    def __init__(self, config_dir: str = "config"):
-        self.config_dir = config_dir
-        self.config_file = os.path.join(config_dir, "config.json")
+    pass
+
+
+class EnhancedConfigLoader:
+    """Enhanced configuration loader with validation and environment support."""
+
+    def __init__(self):
+        self.config_file = self._get_config_file_path()
+        self.env_prefix = "PIPELINE_TOOLKIT_"
+
+    def _get_config_file_path(self) -> Path:
+        """Get the path to the configuration file."""
+        config_path = os.getenv("PIPELINE_TOOLKIT_CONFIG_PATH", "config/config.json")
+        return Path(config_path).resolve()
 
     def load_config(self) -> Config:
-        """Load configuration from config.json with environment variable overrides."""
-        # Load configuration from config.json
-        config_data = self._load_json_file(self.config_file)
-
-        # Apply environment variable overrides
-        final_config = self._apply_env_overrides(config_data)
-
-        # Validate and create Config object
-        return self._create_config(final_config)
-
-    def _load_json_file(self, file_path: str) -> Dict[str, Any]:
-        """Load JSON configuration file."""
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Configuration file not found: {file_path}")
-
+        """Load and validate the configuration from file and environment."""
         try:
-            with open(file_path, 'r') as f:
-                return json.load(f)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in configuration file {file_path}: {e}")
+            config_dict = self._load_config_file()
+            # config_dict = self._apply_environment_overrides(config_dict)
+            config = self._create_config(config_dict)
+            issues = config.validate()
+            if issues:
+                logger.warning(f"Configuration validation issues: {', '.join(issues)}")
+            logger.info(f"Configuration loaded successfully from {self.config_file}")
+            return config
         except Exception as e:
-            raise ValueError(f"Error loading configuration file {file_path}: {e}")
+            raise ConfigurationError(f"Failed to load configuration: {e}")
 
-    def _apply_env_overrides(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply environment variable overrides."""
-        # Gemini API key override
-        if gemini_api_key := (os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')):
-            config.setdefault('gemini', {})['api_key'] = gemini_api_key
+    def _load_config_file(self) -> Dict[str, Any]:
+        """Load configuration from JSON file."""
+        if not self.config_file.exists():
+            raise ConfigurationError(
+                f"Configuration file not found: {self.config_file}"
+            )
+        try:
+            with open(self.config_file, "r", encoding="utf-8") as f:
+                config_dict = json.load(f)
+            logger.debug(f"Loaded configuration from {self.config_file}")
+            return config_dict
 
-        # Gemini model override
-        if gemini_model := os.getenv('GEMINI_MODEL'):
-            config.setdefault('gemini', {})['model'] = gemini_model
+        except json.JSONDecodeError as e:
+            raise ConfigurationError(f"Invalid JSON in configuration file: {e}")
+        except Exception as e:
+            raise ConfigurationError(f"Failed to load configuration file: {e}")
 
-        # Logging level override
-        if log_level := os.getenv('LOG_LEVEL'):
-            config.setdefault('logging', {})['level'] = log_level
-
-        # Single MCP server override (for backward compatibility)
-        if mcp_server_url := os.getenv('MCP_SERVER_URL'):
-            override_server = {
-                'name': os.getenv('MCP_SERVER_NAME', 'Environment MCP Server'),
-                'url': mcp_server_url,
-                'endpoint': os.getenv('MCP_SERVER_ENDPOINT', '/sse'),
-                'enabled': True
-            }
-            config['mcp_servers'] = [override_server]
-
-        return config
+    # def _apply_environment_overrides(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    #     """Apply environment variable overrides to the configuration."""
+    #     for key, value in config_dict.items():
+    #         env_key = f"{self.env_prefix}{key.upper()}"
+    #         if env_key in os.environ:
+    #             config_dict[key] = os.environ[env_key]
+    #     return config_dict
 
     def _create_config(self, config_dict: Dict[str, Any]) -> Config:
-        """Create Config object from dictionary."""
-        # Create Gemini configuration
-        gemini_dict = config_dict.get('gemini', {})
-        if not gemini_dict.get('api_key'):
-            raise ValueError("Gemini API key is required. Set it in config.json or GEMINI_API_KEY environment variable.")
+        """Create a Config object from the configuration dictionary."""
+        try:
 
-        gemini_config = GeminiConfig(
-            api_key=gemini_dict['api_key'],
-            model=gemini_dict.get('model', 'gemini-2.0-flash-exp'),
-            temperature=gemini_dict.get('temperature', 0.1),
-            timeout=gemini_dict.get('timeout', 30)
-        )
+            # Create MCP server configuration
+            mcp_servers = []
+            for server_dict in config_dict.get("mcp_servers", []):
+                # Only include the enabled servers
+                if server_dict.get("enabled", True):
+                    try:
+                        mcp_server = MCPServerConfig(**server_dict)
+                        mcp_servers.append(mcp_server)
+                        logger.debug(f"Added MCP server: {mcp_server.name}")
+                    except Exception as e:
+                        logger.warning(
+                            f"Invalid MCP server configuration {server_dict.get('name', 'unknown')}: {e}"
+                        )
 
-        # Create MCP server configurations
-        mcp_servers = []
-        for server_dict in config_dict.get('mcp_servers', []):
-            if server_dict.get('enabled', True):
-                mcp_server = MCPServerConfig(
-                    name=server_dict['name'],
-                    url=server_dict['url'],
-                    endpoint=server_dict.get('endpoint', '/sse'),
-                    timeout=server_dict.get('timeout', 30),
-                    max_retries=server_dict.get('max_retries', 3),
-                    enabled=server_dict.get('enabled', True),
-                    description=server_dict.get('description', '')
-                )
-                mcp_servers.append(mcp_server)
-
-        if not mcp_servers:
-            raise ValueError("At least one enabled MCP server must be configured.")
-
-        # Create logging configuration
-        logging_dict = config_dict.get('logging', {})
-        logging_config = LoggingConfig(
-            level=logging_dict.get('level', 'INFO'),
-            file=logging_dict.get('file', 'logs/pipeline_bot.log'),
-            max_log_lines=logging_dict.get('max_log_lines', 1000)
-        )
-
-        # Create UI configuration
-        ui_dict = config_dict.get('ui', {})
-        ui_config = UIConfig(
-            show_banner=ui_dict.get('show_banner', True),
-            show_tool_preview=ui_dict.get('show_tool_preview', True),
-            max_tools_preview=ui_dict.get('max_tools_preview', 5)
-        )
-
-        return Config(
-            gemini=gemini_config,
-            mcp_servers=mcp_servers,
-            logging=logging_config,
-            ui=ui_config
-        )
+            return Config(
+                mcp_servers=mcp_servers,
+                log_file=config_dict.get("log_file"),
+                gemini=config_dict.get("gemini"),
+            )
+        except Exception as e:
+            raise ConfigurationError(f"Failed to create configuration object: {e}")
 
 
-def load_config(config_dir: str = "config") -> Config:
-    """
-    Load configuration from JSON files with environment variable overrides.
-
-    Args:
-        config_dir: Directory containing configuration files
-
-    Returns:
-        Config instance
-    """
-    loader = ConfigLoader(config_dir)
-    return loader.load_config()
+# Global config loader instance
+_config_loader = EnhancedConfigLoader()
 
 
-def create_sample_config(config_dir: str = "config") -> None:
-    """Create sample configuration files."""
-    os.makedirs(config_dir, exist_ok=True)
-
-    # Create example user config
-    example_file = os.path.join(config_dir, "config.json.example")
-    config_file = os.path.join(config_dir, "config.json")
-
-    if os.path.exists(example_file):
-        print(f"Sample configuration already exists at {example_file}")
-        print(f"📝 Copy {example_file} to {config_file} and edit as needed")
-        print(f"🔑 Don't forget to set your Gemini API key in the config file!")
-        return
-
-    print(f"✅ Configuration files created in {config_dir}/")
-    print(f"📝 Copy {example_file} to {config_file} and edit as needed")
-    print(f"🔑 Don't forget to set your Gemini API key in the config file!")
-
-
-if __name__ == "__main__":
-    # Create sample configuration when run as script
-    create_sample_config()
+def load_config() -> Config:
+    """Load configuration from using the global loader."""
+    return _config_loader.load_config()
