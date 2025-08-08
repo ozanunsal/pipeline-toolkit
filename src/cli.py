@@ -5,8 +5,10 @@ A minimal command-line interface with help and quit functionality.
 """
 
 import asyncio
+import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -29,11 +31,9 @@ from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
 
+from ai_agent import GeminiAgent, GeminiConfig
 from config import Config, load_config
 from mcp_client import MCPClient
-from ai_agent import GeminiAgent, GeminiConfig
-import re
-import json
 
 # Configure logging
 
@@ -153,7 +153,11 @@ class CLI:
             try:
                 # Initialize Gemini agent if config allows
                 gem_cfg = None
-                if self.config and self.config.gemini and self.config.gemini.get("api_key"):
+                if (
+                    self.config
+                    and self.config.gemini
+                    and self.config.gemini.get("api_key")
+                ):
                     gem_cfg = GeminiConfig(
                         api_key=self.config.gemini["api_key"],
                         model=self.config.gemini.get("model", "gemini-2.0-flash-exp"),
@@ -172,7 +176,9 @@ class CLI:
                             t = getattr(item, "text", None)
                             if isinstance(t, str):
                                 parts.append(t)
-                            elif isinstance(item, dict) and isinstance(item.get("text"), str):
+                            elif isinstance(item, dict) and isinstance(
+                                item.get("text"), str
+                            ):
                                 parts.append(item["text"])
                         if parts:
                             return "\n".join(parts)
@@ -200,7 +206,9 @@ class CLI:
                             chosen_server = plan.get("server") or ""
                             chosen_tool = str(plan.get("tool", ""))
                             if chosen_server and chosen_tool:
-                                console.print(f"[cyan]Calling tool:[/cyan] {chosen_server} :: {chosen_tool}")
+                                console.print(
+                                    f"[cyan]Calling tool:[/cyan] {chosen_server} :: {chosen_tool}"
+                                )
                         except Exception:
                             pass
 
@@ -208,11 +216,17 @@ class CLI:
                         # Find the chosen client and tool
                         chosen_server = plan["server"].lower()
                         chosen_tool = str(plan.get("tool", ""))
-                        call_args: Dict[str, Any] = plan.get("args", {}) if isinstance(plan.get("args"), dict) else {}
+                        call_args: Dict[str, Any] = (
+                            plan.get("args", {})
+                            if isinstance(plan.get("args"), dict)
+                            else {}
+                        )
                         for client, server_name, tools in self.connected_clients:
                             if (server_name or "").lower() == chosen_server:
                                 try:
-                                    result = await client.call_tool(chosen_tool, call_args)
+                                    result = await client.call_tool(
+                                        chosen_tool, call_args
+                                    )
                                     tool_output_text = _extract_text_from_result(result)
                                 except Exception:
                                     tool_output_text = ""
@@ -222,7 +236,9 @@ class CLI:
                         for client, server_name, tools in self.connected_clients:
                             for tool in tools:
                                 try:
-                                    result = await client.call_tool(tool.get("name", ""), {})
+                                    result = await client.call_tool(
+                                        tool.get("name", ""), {}
+                                    )
                                     tool_output_text = _extract_text_from_result(result)
                                     if tool_output_text:
                                         break
@@ -235,9 +251,22 @@ class CLI:
                 def _is_listing_intent(text: str) -> bool:
                     t = text.lower()
                     return any(
-                        kw in t for kw in [
-                            "list", "get ", "show ", "fetch", "find ", "latest", "open ", "unresolved",
-                            "status", "count", "products", "tickets", "builds", "pipelines"
+                        kw in t
+                        for kw in [
+                            "list",
+                            "get ",
+                            "show ",
+                            "fetch",
+                            "find ",
+                            "latest",
+                            "open ",
+                            "unresolved",
+                            "status",
+                            "count",
+                            "products",
+                            "tickets",
+                            "builds",
+                            "pipelines",
                         ]
                     )
 
@@ -250,7 +279,13 @@ class CLI:
                         if isinstance(obj, list):
                             return {"key": "items", "items": obj}
                         if isinstance(obj, dict):
-                            for key in ["products", "tickets", "items", "results", "data"]:
+                            for key in [
+                                "products",
+                                "tickets",
+                                "items",
+                                "results",
+                                "data",
+                            ]:
                                 val = obj.get(key)
                                 if isinstance(val, list):
                                     return {"key": key, "items": val}
@@ -261,17 +296,34 @@ class CLI:
                 def _render_list(items):
                     def _get(d, keys):
                         for k in keys:
-                            if isinstance(d, dict) and k in d and isinstance(d[k], (str, int)):
+                            if (
+                                isinstance(d, dict)
+                                and k in d
+                                and isinstance(d[k], (str, int))
+                            ):
                                 return str(d[k])
                         return ""
+
                     lines: List[str] = []
                     for idx, it in enumerate(items, start=1):
                         if isinstance(it, dict):
-                            id_or_key = _get(it, ["id", "key", "product", "version"]) or ""
+                            id_or_key = (
+                                _get(it, ["id", "key", "product", "version"]) or ""
+                            )
                             name = _get(it, ["name", "title", "summary"]) or ""
                             status = _get(it, ["status", "state"]) or ""
-                            parts = [p for p in [id_or_key, name, f"({status})" if status else ""] if p]
-                            line = f"{idx}. " + " - ".join(parts) if parts else f"{idx}."
+                            parts = [
+                                p
+                                for p in [
+                                    id_or_key,
+                                    name,
+                                    f"({status})" if status else "",
+                                ]
+                                if p
+                            ]
+                            line = (
+                                f"{idx}. " + " - ".join(parts) if parts else f"{idx}."
+                            )
                         else:
                             line = f"{idx}. {it}"
                         lines.append(line)
@@ -280,7 +332,11 @@ class CLI:
 
                 if _is_listing_intent(query) and tool_output_text:
                     parsed = _extract_list_from_text(tool_output_text)
-                    if parsed and isinstance(parsed.get("items"), list) and parsed["items"]:
+                    if (
+                        parsed
+                        and isinstance(parsed.get("items"), list)
+                        and parsed["items"]
+                    ):
                         _render_list(parsed["items"])
                         return
 
@@ -291,9 +347,11 @@ class CLI:
                 else:
                     response = analysis_input[:500]
 
-                response_panel = Panel(Markdown(response) if response else "No response generated",
-                                       title="🤖 AI Response",
-                                       border_style="green")
+                response_panel = Panel(
+                    Markdown(response) if response else "No response generated",
+                    title="🤖 AI Response",
+                    border_style="green",
+                )
                 console.print(response_panel)
 
             except Exception as e:
@@ -451,7 +509,9 @@ class CLI:
         except Exception:
             pass
 
-        base_dir = Path(os.getenv("PIPELINE_TOOLKIT_LOG_DIR", str(Path.cwd() / "logs"))).resolve()
+        base_dir = Path(
+            os.getenv("PIPELINE_TOOLKIT_LOG_DIR", str(Path.cwd() / "logs"))
+        ).resolve()
         return base_dir / "pipeline_bot.log"
 
     async def cmd_logs(self, args: List[str]):

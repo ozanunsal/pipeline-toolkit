@@ -1,17 +1,18 @@
 import asyncio
+import io
 import logging
 import os
-import io
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 import nest_asyncio
 from mcp import ClientSession
 from mcp.client.sse import sse_client
-from mcp.client.stdio import stdio_client, StdioServerParameters
+from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from config import MCPServerConfig, load_config
+
 
 def _resolve_log_file() -> Path:
     # Prefer config.json 'log_file' if present
@@ -26,9 +27,12 @@ def _resolve_log_file() -> Path:
         pass
 
     # Else prefer env var; otherwise use CWD/logs/pipeline_bot.log
-    log_dir = Path(os.getenv("PIPELINE_TOOLKIT_LOG_DIR", str(Path.cwd() / "logs"))).resolve()
+    log_dir = Path(
+        os.getenv("PIPELINE_TOOLKIT_LOG_DIR", str(Path.cwd() / "logs"))
+    ).resolve()
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir / "pipeline_bot.log"
+
 
 log_file = _resolve_log_file()
 
@@ -45,6 +49,7 @@ nest_asyncio.apply()
 
 class _ErrLogToLogger(io.TextIOBase):
     """Redirect server stderr to logger, line-buffered."""
+
     def __init__(self, logger: logging.Logger, level: int = logging.INFO) -> None:
         self._logger = logger
         self._level = level
@@ -203,9 +208,7 @@ class MCPClient:
                 logger.info(
                     f"Connecting to MCP server via stdio: {self.config.command}"
                 )
-                connect_task = asyncio.create_task(
-                    self._establish_stdio_connection()
-                )
+                connect_task = asyncio.create_task(self._establish_stdio_connection())
                 await asyncio.wait_for(connect_task, timeout=self.connection_timeout)
 
             # Load available tools
@@ -259,9 +262,7 @@ class MCPClient:
             logger.warning("Working directory not found, ignoring: %s", cwd)
             cwd = None
 
-        logger.info(
-            "Starting stdio MCP server: %s %s", command, " ".join(args)
-        )
+        logger.info("Starting stdio MCP server: %s %s", command, " ".join(args))
         if cwd:
             logger.info("Working directory: %s", cwd)
 
@@ -289,7 +290,9 @@ class MCPClient:
                 err_stream = open(str(log_file), "a", buffering=1)
 
             self.context_manager = stdio_client(server_params, errlog=err_stream)
-            self.read_stream, self.write_stream = await self.context_manager.__aenter__()
+            self.read_stream, self.write_stream = (
+                await self.context_manager.__aenter__()
+            )
 
             # Create and initialize MCP session
             self.session = ClientSession(self.read_stream, self.write_stream)
@@ -373,7 +376,9 @@ class MCPClient:
             for tool in self.tools
         ]
 
-    async def call_tool(self, tool_name: str, arguments: Optional[Dict[str, Any]] = None) -> Any:
+    async def call_tool(
+        self, tool_name: str, arguments: Optional[Dict[str, Any]] = None
+    ) -> Any:
         """Call a tool by name with optional arguments using the MCP session."""
         if self.session is None:
             raise RuntimeError("MCP session not initialized")

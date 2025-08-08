@@ -1,9 +1,9 @@
 import asyncio
+import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
-import json
-import re
 
 import google.generativeai as genai
 from rich.console import Console
@@ -97,24 +97,61 @@ class GeminiAgent:
         if extracted and isinstance(extracted.get("items"), list):
             # Provide a compact JSON snapshot limited to first 20 items and common fields
             items = extracted["items"][:20]
+
             # Try to reduce noise by picking basic fields when dicts
             def _shrink(x: Any) -> Any:
                 if isinstance(x, dict):
-                    for k in ["id", "name", "key", "title", "summary", "status", "state", "version", "product"]:
+                    for k in [
+                        "id",
+                        "name",
+                        "key",
+                        "title",
+                        "summary",
+                        "status",
+                        "state",
+                        "version",
+                        "product",
+                    ]:
                         if k in x:
                             # keep common fields only
-                            return {kk: x[kk] for kk in x if kk in {"id", "name", "key", "title", "summary", "status", "state", "version", "product"}}
+                            return {
+                                kk: x[kk]
+                                for kk in x
+                                if kk
+                                in {
+                                    "id",
+                                    "name",
+                                    "key",
+                                    "title",
+                                    "summary",
+                                    "status",
+                                    "state",
+                                    "version",
+                                    "product",
+                                }
+                            }
                     return {k: v for k, v in list(x.items())[:5]}
                 return x
+
             shrunk = [_shrink(i) for i in items]
             data_hint = (
-                "DATA_JSON (for listing mode):\n" +
-                json.dumps({"key": extracted["key"], "count": len(extracted["items"]), "items": shrunk}, ensure_ascii=False)
+                "DATA_JSON (for listing mode):\n"
+                + json.dumps(
+                    {
+                        "key": extracted["key"],
+                        "count": len(extracted["items"]),
+                        "items": shrunk,
+                    },
+                    ensure_ascii=False,
+                )
                 + "\nGUIDANCE: Use DATA_JSON to produce a list; avoid generic success messages."
             )
 
-        prompt = PROMPT_TEMPLATE.format(user_query=user_query, tool_text=tool_text, data_hint=data_hint)
+        prompt = PROMPT_TEMPLATE.format(
+            user_query=user_query, tool_text=tool_text, data_hint=data_hint
+        )
         try:
+
             def _generate():
                 return self.model.generate_content(prompt)
 
@@ -125,7 +162,9 @@ class GeminiAgent:
             return ""
 
     async def analyze_failure_log(self, log_text: str) -> str:
-        return await self.generate_answer("Analyze the following error log and provide causes and fixes.", log_text)
+        return await self.generate_answer(
+            "Analyze the following error log and provide causes and fixes.", log_text
+        )
 
     async def answer_query(
         self,
@@ -166,16 +205,23 @@ class GeminiAgent:
                 if isinstance(schema, dict):
                     required = schema.get("required") or []
                     if isinstance(schema.get("properties"), dict):
-                        props = {k: (v.get("type") if isinstance(v, dict) else None) for k, v in schema["properties"].items()}
-                compact_tools.append({"name": name, "required": required, "properties": props})
+                        props = {
+                            k: (v.get("type") if isinstance(v, dict) else None)
+                            for k, v in schema["properties"].items()
+                        }
+                compact_tools.append(
+                    {"name": name, "required": required, "properties": props}
+                )
             inventory.append({"server": server_name, "tools": compact_tools})
         plan_prompt = (
             f"User Request:\n{query}\n\n"
             f"Available Servers and Tools (JSON):\n{json.dumps(inventory, ensure_ascii=False)}\n\n"
-            "Respond with JSON only, e.g.: {\"server\": \"My Server\", \"tool\": \"list_products\", \"args\": {}}"
+            'Respond with JSON only, e.g.: {"server": "My Server", "tool": "list_products", "args": {}}'
         )
+
         def _generate_plan():
             return self.model.generate_content([system_prompt, plan_prompt])
+
         try:
             resp = await asyncio.get_event_loop().run_in_executor(None, _generate_plan)
             text = getattr(resp, "text", "") or ""
@@ -193,4 +239,4 @@ class GeminiAgent:
             return {"server": str(srv), "tool": str(tool), "args": args}
         except Exception as e:
             logger.error(f"Gemini planning failed: {e}")
-            return {"server": None} 
+            return {"server": None}
