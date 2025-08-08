@@ -47,10 +47,36 @@ User Request:
 Tool Output:
 {tool_text}
 
+{data_hint}
 Your response:"""
 
 logger = logging.getLogger(__name__)
 console = Console()
+
+
+def _extract_list_from_text(tool_text: str) -> Optional[Dict[str, Any]]:
+    """Try to extract a JSON list payload from tool_text.
+
+    Looks for top-level array or common keys: products, tickets, items, results, data.
+    Returns {"key": str, "items": List[Dict|Any]} or None.
+    """
+    try:
+        # Find the first JSON object/array in the text
+        m = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", tool_text)
+        if not m:
+            return None
+        obj = json.loads(m.group(1))
+        # Direct list
+        if isinstance(obj, list):
+            return {"key": "items", "items": obj}
+        if isinstance(obj, dict):
+            for key in ["products", "tickets", "items", "results", "data"]:
+                val = obj.get(key)
+                if isinstance(val, list):
+                    return {"key": key, "items": val}
+        return None
+    except Exception:
+        return None
 
 
 @dataclass
@@ -66,7 +92,28 @@ class GeminiAgent:
         self.gemini_config = config
 
     async def generate_answer(self, user_query: str, tool_text: str) -> str:
-        prompt = PROMPT_TEMPLATE.format(user_query=user_query, tool_text=tool_text)
+        data_hint = ""
+        extracted = _extract_list_from_text(tool_text or "")
+        if extracted and isinstance(extracted.get("items"), list):
+            # Provide a compact JSON snapshot limited to first 20 items and common fields
+            items = extracted["items"][:20]
+            # Try to reduce noise by picking basic fields when dicts
+            def _shrink(x: Any) -> Any:
+                if isinstance(x, dict):
+                    for k in ["id", "name", "key", "title", "summary", "status", "state", "version", "product"]:
+                        if k in x:
+                            # keep common fields only
+                            return {kk: x[kk] for kk in x if kk in {"id", "name", "key", "title", "summary", "status", "state", "version", "product"}}
+                    return {k: v for k, v in list(x.items())[:5]}
+                return x
+            shrunk = [_shrink(i) for i in items]
+            data_hint = (
+                "DATA_JSON (for listing mode):\n" +
+                json.dumps({"key": extracted["key"], "count": len(extracted["items"]), "items": shrunk}, ensure_ascii=False)
+                + "\nGUIDANCE: Use DATA_JSON to produce a list; avoid generic success messages."
+            )
+
+        prompt = PROMPT_TEMPLATE.format(user_query=user_query, tool_text=tool_text, data_hint=data_hint)
         try:
             def _generate():
                 return self.model.generate_content(prompt)
@@ -78,7 +125,6 @@ class GeminiAgent:
             return ""
 
     async def analyze_failure_log(self, log_text: str) -> str:
-        # Backward compatibility: route to the generalized generator
         return await self.generate_answer("Analyze the following error log and provide causes and fixes.", log_text)
 
     async def answer_query(
@@ -87,7 +133,6 @@ class GeminiAgent:
         connected_clients: List[Tuple[Any, str, List[Dict[str, Any]]]],
     ):
         relevant_text = query
-
         for client, server_name, tools in connected_clients:
             try:
                 for tool in tools:
@@ -96,7 +141,6 @@ class GeminiAgent:
                         pass
             except Exception:
                 continue
-
         return await self.generate_answer(query, relevant_text)
 
     async def plan_tool_call(
@@ -104,17 +148,12 @@ class GeminiAgent:
         query: str,
         tools_by_server: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        """Plan which server/tool to call and with what arguments.
-
-        Returns a dict like: {"server": str, "tool": str, "args": {..}} or {"server": null} if none.
-        """
         system_prompt = (
             "You are a tool planner. Given the user request and available MCP servers and their tools, "
             "choose EXACTLY ONE best tool to answer the request, and construct its arguments from the user text. "
-            "If required inputs are missing, infer them from the query when possible. If truly missing, set them to null.\n\n"
-            "Return ONLY a strict JSON object with keys: server, tool, args. No markdown, no text outside JSON."
+            "If required inputs are missing, infer them or set to null if truly unavailable.\n\n"
+            "Return ONLY a strict JSON object with keys: server, tool, args. No markdown."
         )
-
         inventory = []
         for server in tools_by_server:
             server_name = server.get("server") or ""
@@ -130,16 +169,13 @@ class GeminiAgent:
                         props = {k: (v.get("type") if isinstance(v, dict) else None) for k, v in schema["properties"].items()}
                 compact_tools.append({"name": name, "required": required, "properties": props})
             inventory.append({"server": server_name, "tools": compact_tools})
-
         plan_prompt = (
             f"User Request:\n{query}\n\n"
             f"Available Servers and Tools (JSON):\n{json.dumps(inventory, ensure_ascii=False)}\n\n"
-            "Respond with JSON only, e.g.: {\"server\": \"My Server\", \"tool\": \"analyze_job\", \"args\": {\"job_id\": \"...\"}}"
+            "Respond with JSON only, e.g.: {\"server\": \"My Server\", \"tool\": \"list_products\", \"args\": {}}"
         )
-
         def _generate_plan():
             return self.model.generate_content([system_prompt, plan_prompt])
-
         try:
             resp = await asyncio.get_event_loop().run_in_executor(None, _generate_plan)
             text = getattr(resp, "text", "") or ""

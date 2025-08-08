@@ -33,6 +33,7 @@ from config import Config, load_config
 from mcp_client import MCPClient
 from ai_agent import GeminiAgent, GeminiConfig
 import re
+import json
 
 # Configure logging
 
@@ -230,20 +231,69 @@ class CLI:
                             if tool_output_text:
                                 break
 
-                # If we have tool output, use it as the log_text for analysis; otherwise use user query
+                # If listing intent and list-like data found, render deterministically
+                def _is_listing_intent(text: str) -> bool:
+                    t = text.lower()
+                    return any(
+                        kw in t for kw in [
+                            "list", "get ", "show ", "fetch", "find ", "latest", "open ", "unresolved",
+                            "status", "count", "products", "tickets", "builds", "pipelines"
+                        ]
+                    )
+
+                def _extract_list_from_text(tool_text: str):
+                    try:
+                        m = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", tool_text)
+                        if not m:
+                            return None
+                        obj = json.loads(m.group(1))
+                        if isinstance(obj, list):
+                            return {"key": "items", "items": obj}
+                        if isinstance(obj, dict):
+                            for key in ["products", "tickets", "items", "results", "data"]:
+                                val = obj.get(key)
+                                if isinstance(val, list):
+                                    return {"key": key, "items": val}
+                        return None
+                    except Exception:
+                        return None
+
+                def _render_list(items):
+                    def _get(d, keys):
+                        for k in keys:
+                            if isinstance(d, dict) and k in d and isinstance(d[k], (str, int)):
+                                return str(d[k])
+                        return ""
+                    lines: List[str] = []
+                    for idx, it in enumerate(items, start=1):
+                        if isinstance(it, dict):
+                            id_or_key = _get(it, ["id", "key", "product", "version"]) or ""
+                            name = _get(it, ["name", "title", "summary"]) or ""
+                            status = _get(it, ["status", "state"]) or ""
+                            parts = [p for p in [id_or_key, name, f"({status})" if status else ""] if p]
+                            line = f"{idx}. " + " - ".join(parts) if parts else f"{idx}."
+                        else:
+                            line = f"{idx}. {it}"
+                        lines.append(line)
+                    if lines:
+                        console.print("\n".join(lines))
+
+                if _is_listing_intent(query) and tool_output_text:
+                    parsed = _extract_list_from_text(tool_output_text)
+                    if parsed and isinstance(parsed.get("items"), list) and parsed["items"]:
+                        _render_list(parsed["items"])
+                        return
+
+                # Otherwise, use AI summarization
                 analysis_input = tool_output_text or query
-
                 if agent:
-                    response = await agent.analyze_failure_log(analysis_input)
+                    response = await agent.generate_answer(query, analysis_input)
                 else:
-                    # Fallback: just echo the input in a simple format
-                    response = f"Summary: {analysis_input[:200]}\nPossible Fixes: Review logs and configuration."
+                    response = analysis_input[:500]
 
-                response_panel = Panel(
-                    Markdown(response) if response else "No response generated",
-                    title="🤖 AI Response",
-                    border_style="green",
-                )
+                response_panel = Panel(Markdown(response) if response else "No response generated",
+                                       title="🤖 AI Response",
+                                       border_style="green")
                 console.print(response_panel)
 
             except Exception as e:
@@ -379,7 +429,7 @@ class CLI:
                     if isinstance(tool, dict)
                     else "No description"
                 )
-                table.add_row(name, desc[:80] + "..." if len(desc) > 80 else desc)
+                table.add_row(name, desc[:200] + "..." if len(desc) > 200 else desc)
             console.print(table)
             console.print()
 
