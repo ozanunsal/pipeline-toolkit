@@ -22,7 +22,7 @@ class MCPServerConfig:
 
     name: str
     connection_type: str = "sse"
-    enabled: bool = True
+    enabled: bool = False
     description: str = ""
 
     # SSE connection settings
