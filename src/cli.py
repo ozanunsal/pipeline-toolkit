@@ -228,6 +228,27 @@ class CLI:
                                         chosen_tool, call_args
                                     )
                                     tool_output_text = _extract_text_from_result(result)
+
+                                    # Generic follow-up logic: check if the query needs additional information
+                                    # that can be inferred from the current result
+                                    if tool_output_text and agent:
+                                        followup_needed = await self._check_followup_needed(
+                                            query, chosen_tool, tool_output_text, call_args, agent, tools_by_server
+                                        )
+                                        if followup_needed:
+                                            try:
+                                                followup_plan = followup_needed
+                                                console.print(f"[cyan]Following up with:[/cyan] {followup_plan['tool']}")
+                                                followup_result = await client.call_tool(
+                                                    followup_plan['tool'], followup_plan['args']
+                                                )
+                                                followup_text = _extract_text_from_result(followup_result)
+                                                if followup_text:
+                                                    tool_output_text = f"{tool_output_text}\n\n{followup_text}"
+                                            except Exception:
+                                                # If follow-up fails, just use the original result
+                                                pass
+
                                 except Exception:
                                     tool_output_text = ""
                                 break
@@ -599,6 +620,54 @@ class CLI:
         except Exception as e:
             console.print(f"[red]❌ Fatal error: {e}[/red]")
             sys.exit(1)
+
+    async def _check_followup_needed(self, query: str, first_tool: str, first_result: str,
+                                   first_args: Dict[str, Any], agent, tools_by_server) -> Optional[Dict[str, Any]]:
+        """Check if a follow-up tool call is needed based on the query and initial result."""
+        import json
+
+        # Create a follow-up planning prompt
+        tools_summary = [{'server': s['server'], 'tools': [t['name'] for t in s['tools']]} for s in tools_by_server]
+        tools_json = json.dumps(tools_summary, indent=2)
+
+        followup_prompt = (
+            f"Original Query: {query}\n"
+            f"First Tool Called: {first_tool}\n"
+            f"First Tool Result: {first_result[:500]}...\n\n"
+            f"Does the original query need additional information that can be obtained from another tool?\n"
+            f"If YES, respond with JSON: {{\"tool\": \"tool_name\", \"args\": {{...}}}}\n"
+            f"If NO, respond with: {{\"followup_needed\": false}}\n\n"
+            f"Available Tools: {tools_json}\n\n"
+            "For example:\n"
+            '- If query asks for "errors" but first result only shows pipeline info with ID, use get_failed_jobs\n'
+            '- If query asks for "logs" but first result only shows job info with ID, use get_job_log\n'
+            "Extract any needed IDs or parameters from the first result."
+        )
+
+        try:
+            import re
+            resp = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: agent.model.generate_content([followup_prompt])
+            )
+            text = getattr(resp, "text", "") or ""
+            m = re.search(r"\{[\s\S]*\}", text)
+            if not m:
+                return None
+
+            obj = json.loads(m.group(0))
+            if obj.get("followup_needed") is False:
+                return None
+
+            if obj.get("tool") and obj.get("args"):
+                # Inherit instance_type from first call if not specified
+                if "instance_type" not in obj["args"] and "instance_type" in first_args:
+                    obj["args"]["instance_type"] = first_args["instance_type"]
+                return obj
+
+        except Exception as e:
+            logger.debug(f"Follow-up planning failed: {e}")
+
+        return None
 
     def display_banner(self):
         """Display the banner."""

@@ -190,7 +190,16 @@ class GeminiAgent:
         system_prompt = (
             "You are a tool planner. Given the user request and available MCP servers and their tools, "
             "choose EXACTLY ONE best tool to answer the request, and construct its arguments from the user text. "
-            "If required inputs are missing, infer them or set to null if truly unavailable.\n\n"
+            "CRITICAL RULES:\n"
+            "1. Analyze the tool's required parameters and provide reasonable values based on the user query\n"
+            "2. For missing required parameters, infer sensible defaults from context:\n"
+            "   - instance_type: default to 'upstream' unless user specifies 'downstream'\n"
+            "   - branch_name: default to 'main' unless user specifies another branch\n"
+            "   - status: infer from query ('failed', 'success', 'running', etc.)\n"
+            "   - pipeline_id: only use if explicitly mentioned or if this is a follow-up query\n"
+            "3. NEVER use null, None, or empty string for required parameters\n"
+            "4. If a query requires multiple steps (e.g., 'get errors for latest failed pipeline'), "
+            "   choose the FIRST logical step (e.g., get_latest_pipeline with status='failed')\n\n"
             "Return ONLY a strict JSON object with keys: server, tool, args. No markdown."
         )
         inventory = []
@@ -199,24 +208,38 @@ class GeminiAgent:
             compact_tools = []
             for t in server.get("tools", []):
                 name = t.get("name", "")
+                description = t.get("description", "")
                 schema = t.get("inputSchema") or {}
                 props = {}
                 required = []
                 if isinstance(schema, dict):
                     required = schema.get("required") or []
                     if isinstance(schema.get("properties"), dict):
-                        props = {
-                            k: (v.get("type") if isinstance(v, dict) else None)
-                            for k, v in schema["properties"].items()
-                        }
+                        props = {}
+                        for k, v in schema["properties"].items():
+                            if isinstance(v, dict):
+                                prop_info = {
+                                    "type": v.get("type"),
+                                    "description": v.get("description", ""),
+                                }
+                                if "enum" in v:
+                                    prop_info["enum"] = v["enum"]
+                                props[k] = prop_info
+                            else:
+                                props[k] = {"type": None}
                 compact_tools.append(
-                    {"name": name, "required": required, "properties": props}
+                    {"name": name, "description": description, "required": required, "properties": props}
                 )
             inventory.append({"server": server_name, "tools": compact_tools})
         plan_prompt = (
             f"User Request:\n{query}\n\n"
-            f"Available Servers and Tools (JSON):\n{json.dumps(inventory, ensure_ascii=False)}\n\n"
-            'Respond with JSON only, e.g.: {"server": "My Server", "tool": "list_products", "args": {}}'
+            f"Available Servers and Tools (JSON):\n{json.dumps(inventory, ensure_ascii=False, indent=2)}\n\n"
+            "EXAMPLES of proper parameter inference:\n"
+            '- "latest failed pipeline" → {"instance_type": "upstream", "status": "failed", "branch_name": "main"}\n'
+            '- "pipeline errors" (requires pipeline_id) → choose get_latest_pipeline first\n'
+            '- "downstream pipeline" → {"instance_type": "downstream"}\n'
+            '- "pipeline on branch dev" → {"branch_name": "dev"}\n\n'
+            'Respond with JSON only, e.g.: {"server": "Pipelines MCP Server", "tool": "get_latest_pipeline", "args": {"instance_type": "upstream", "status": "failed"}}'
         )
 
         def _generate_plan():
