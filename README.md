@@ -54,12 +54,23 @@ This installs the CLI commands:
 - `pipeline-toolkit`
 - `ptk`
 
+## Environment Variables
+
+Set up the required environment variables:
+
+```bash
+# Required for Gemini AI integration
+export GEMINI_API_KEY="your-gemini-api-key-here"
+```
+
+You can also create a `.env` file in your project root or add these to your shell profile (`.bashrc`, `.zshrc`, etc.).
+
 ## Configuration
 
 Create `config/config.json` (or copy from the example below). The config supports:
 
 - `log_file` (optional): Absolute or `~` path to the log file. If not set, defaults to `logs/pipeline_bot.log`.
-- `gemini` (optional): API key and model for tool planning and answer generation.
+- `gemini` (optional): Model configuration for tool planning and answer generation. API key is read from `GEMINI_API_KEY` environment variable.
 - `mcp_servers`: List of MCP server entries with either `sse` or `stdio` transport.
 
 ### Example: `config/config.json.example`
@@ -68,7 +79,7 @@ Create `config/config.json` (or copy from the example below). The config support
 {
   "log_file": "~/pipeline-toolkit.log",
   "gemini": {
-    "api_key": "YOUR_GEMINI_API_KEY",
+    "_comment": "API key is read from GEMINI_API_KEY environment variable",
     "model": "gemini-2.0-flash-exp"
   },
   "mcp_servers": [
@@ -176,7 +187,7 @@ Calling tool: <Server Name> :: <tool_name>
   - Use absolute paths for `--env-file` and `working_directory`.
   - Check `logs/pipeline_bot.log` for errors.
 - Agent not planning tools:
-  - Ensure `gemini.api_key` is present.
+  - Ensure `GEMINI_API_KEY` environment variable is set.
   - Verify servers expose tools (via `list tools`).
 
 ## Development

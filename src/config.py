@@ -207,6 +207,10 @@ class EnhancedConfigLoader:
             with open(self.config_file, "r", encoding="utf-8") as f:
                 config_dict = json.load(f)
             logger.debug(f"Loaded configuration from {self.config_file}")
+
+            # Apply environment variable overrides for sensitive data
+            config_dict = self._apply_environment_overrides(config_dict)
+
             return config_dict
 
         except json.JSONDecodeError as e:
@@ -214,13 +218,18 @@ class EnhancedConfigLoader:
         except Exception as e:
             raise ConfigurationError(f"Failed to load configuration file: {e}")
 
-    # def _apply_environment_overrides(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
-    #     """Apply environment variable overrides to the configuration."""
-    #     for key, value in config_dict.items():
-    #         env_key = f"{self.env_prefix}{key.upper()}"
-    #         if env_key in os.environ:
-    #             config_dict[key] = os.environ[env_key]
-    #     return config_dict
+    def _apply_environment_overrides(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply environment variable overrides to the configuration."""
+        # Handle Gemini API key from environment variable
+        if "gemini" in config_dict and isinstance(config_dict["gemini"], dict):
+            gemini_api_key = os.getenv("GEMINI_API_KEY")
+            if gemini_api_key:
+                config_dict["gemini"]["api_key"] = gemini_api_key
+                logger.debug("Using Gemini API key from environment variable")
+            elif not config_dict["gemini"].get("api_key"):
+                logger.warning("No Gemini API key found in environment variable GEMINI_API_KEY or config file")
+
+        return config_dict
 
     def _create_config(self, config_dict: Dict[str, Any]) -> Config:
         """Create a Config object from the configuration dictionary."""
